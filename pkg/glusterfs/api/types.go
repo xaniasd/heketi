@@ -186,6 +186,72 @@ type VolumeExpandRequest struct {
 	Size int `json:"expand_size"`
 }
 
+// GeoReplicationActionType defines the different actions relevant to geo-rep sessions, except for delete
+type GeoReplicationActionType string
+
+// Supported GeoReplication action types
+const (
+	GeoReplicationActionCreate GeoReplicationActionType = "create"
+	GeoReplicationActionConfig GeoReplicationActionType = "config"
+	GeoReplicationActionStart  GeoReplicationActionType = "start"
+	GeoReplicationActionStop   GeoReplicationActionType = "stop"
+	GeoReplicationActionStatus GeoReplicationActionType = "status"
+	GeoReplicationActionPause  GeoReplicationActionType = "pause"
+	GeoReplicationActionResume GeoReplicationActionType = "resume"
+)
+
+type GeoReplicationVolumeStatus struct {
+	Volume GeoReplicationVolume `json:"volume"`
+}
+type GeoReplicationVolume struct {
+	VolumeName string                 `json:"name"`
+	Sessions   GeoReplicationSessions `json:"sessions"`
+}
+
+type GeoReplicationSessions struct {
+	SessionList []GeoReplicationSession `json:"session"`
+}
+
+type GeoReplicationSession struct {
+	SessionSlave string               `json:"session_slave"`
+	Pairs        []GeoReplicationPair `json:"pair"`
+}
+type GeoReplicationPair struct {
+	MasterNode               string `json:"master_node"`
+	MasterBrick              string `json:"master_brick"`
+	SlaveUser                string `json:"slave_user"`
+	Slave                    string `json:"slave"`
+	SlaveNode                string `json:"slave_node"`
+	Status                   string `json:"status"`
+	CrawlStatus              string `json:"crawl_status"`
+	Entry                    string `json:"entry"`
+	Data                     string `json:"data"`
+	Meta                     string `json:"meta"`
+	Failures                 string `json:"failures"`
+	CheckpointCompleted      string `json:"checkpoint_completed"`
+	MasterNodeUUID           string `json:"master_node_uuid"`
+	LastSynced               string `json:"last_string"`
+	CheckpointTime           string `json:"checkpoint_time"`
+	CheckpointCompletionTime string `json:"checkpoint_completion_time"`
+}
+
+type GeoReplicationInfo struct {
+	SlaveHost    string `json:"slavehost"`
+	SlaveVolume  string `json:"slavevolume"`
+	SlaveSSHPort int    `json:"slavesshport"`
+}
+
+//VolumeGeoReplicationRequest is the body for a GeoReplication POST request
+type GeoReplicationRequest struct {
+	Action       GeoReplicationActionType `json:"action"`
+	ActionParams map[string]string        `json:"actionparams,omitempty"`
+	Force        bool                     `json:"force"`
+	GeoReplicationInfo
+}
+
+type GeoReplicationCreateResponse struct {
+}
+
 // Constructors
 
 func NewVolumeInfoResponse() *VolumeInfoResponse {
