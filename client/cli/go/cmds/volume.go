@@ -47,7 +47,7 @@ func init() {
 	volumeCommand.AddCommand(volumeExpandCommand)
 	volumeCommand.AddCommand(volumeInfoCommand)
 	volumeCommand.AddCommand(volumeListCommand)
-	initGeoRepCommand(volumeCommand)
+	initGeoRepCommand()
 
 	volumeCreateCommand.Flags().IntVar(&size, "size", -1,
 		"\n\tSize of volume in GB")

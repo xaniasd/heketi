@@ -2,6 +2,7 @@ package glusterfs
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/boltdb/bolt"
@@ -10,10 +11,72 @@ import (
 	"github.com/heketi/utils"
 )
 
-// VolumeGeoReplicationStatus is the handler returning the geo-replication session
+// GeoReplicationStatus is the handler returning the geo-replication session
+// status
+func (a *App) GeoReplicationStatus(w http.ResponseWriter, r *http.Request) {
+	logger.Debug("In GeoReplicationStatus")
+
+	var node *NodeEntry
+	var err error
+
+	err = a.db.View(func(tx *bolt.Tx) error {
+		clusters, err := ClusterList(tx)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return err
+		}
+
+		if len(clusters) == 0 {
+			http.Error(w, fmt.Sprintf("No clusters configured"), http.StatusBadRequest)
+			logger.LogError("No clusters configured")
+			return ErrNotFound
+		}
+
+		cluster, err := NewClusterEntryFromId(tx, clusters[0])
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return err
+		}
+
+		if len(cluster.Info.Nodes) == 0 {
+			errMsg := "No clusters configured"
+			http.Error(w, fmt.Sprintf(errMsg), http.StatusBadRequest)
+			logger.LogError(errMsg)
+			return ErrNotFound
+		}
+
+		//use first node of the first cluster to get status
+		node, err = NewNodeEntryFromId(tx, cluster.Info.Nodes[0])
+		if err == ErrNotFound {
+			http.Error(w, "Node Id not found", http.StatusNotFound)
+			return err
+		} else if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		return
+	}
+
+	resp, err := node.NewGeoReplicationStatusResponse(a.executor)
+	if err != nil {
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		panic(err)
+	}
+}
+
+// GeoReplicationVolumeStatus is the handler returning the geo-replication session
 // status for a specific volume
-func (a *App) VolumeGeoReplicationStatus(w http.ResponseWriter, r *http.Request) {
-	logger.Debug("In VolumeGeoReplication")
+func (a *App) GeoReplicationVolumeStatus(w http.ResponseWriter, r *http.Request) {
+	logger.Debug("In GeoReplicationVolumeStatus")
 
 	vars := mux.Vars(r)
 	id := vars["id"]
@@ -60,6 +123,8 @@ func (a *App) VolumeGeoReplicationStatus(w http.ResponseWriter, r *http.Request)
 
 	resp, err := volume.NewGeoReplicationStatusResponse(a.executor, host)
 	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		logger.LogError("Failed to get geo-replication status: %s", err.Error())
 		return
 	}
 
@@ -70,13 +135,9 @@ func (a *App) VolumeGeoReplicationStatus(w http.ResponseWriter, r *http.Request)
 	}
 }
 
-// VolumeGeoReplicationDelete is the handler for deleting the geo-replication session
-// for a specific volume
-func (a *App) VolumeGeoReplicationDelete(w http.ResponseWriter, r *http.Request) {
-}
-
-// VolumeGeoReplication is the handler for managing a geo-replication session
-func (a *App) VolumeGeoReplication(w http.ResponseWriter, r *http.Request) {
+// GeoReplicationPostHandler is the handler for managing a geo-replication session
+// It covers create, config, start, stop, pause, resume and delete
+func (a *App) GeoReplicationPostHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Debug("In VolumeGeoReplication")
 
 	vars := mux.Vars(r)
@@ -92,6 +153,19 @@ func (a *App) VolumeGeoReplication(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logger.Debug("Msg: %v", msg)
+
+	switch {
+	case msg.SlaveHost == "":
+		errMsg := "Slave host not defined"
+		http.Error(w, errMsg, http.StatusBadRequest)
+		logger.LogError(errMsg)
+		return
+	case msg.SlaveVolume == "":
+		errMsg := "Slave volume not defined"
+		http.Error(w, errMsg, http.StatusBadRequest)
+		logger.LogError(errMsg)
+		return
+	}
 
 	err = a.db.View(func(tx *bolt.Tx) error {
 		volume, err = NewVolumeEntryFromId(tx, id)
@@ -131,13 +205,14 @@ func (a *App) VolumeGeoReplication(w http.ResponseWriter, r *http.Request) {
 
 	// Perform GeoReplication action on volume in an asynchronous function
 	a.asyncManager.AsyncHttpRedirectFunc(w, r, func() (string, error) {
-		switch msg.Action {
-		case api.GeoReplicationActionCreate:
-			logger.Info("Creating geo-replication session for volume %s", volume.Info.Id)
-			volume.GeoReplicationCreate(a.db, a.executor, host, msg)
-		default:
-			logger.LogError("Unsupported action %s", msg.Action)
+		if err := volume.GeoReplicationAction(a.db, a.executor, host, msg); err != nil {
+			return "", err
 		}
+
+		if msg.Action == api.GeoReplicationActionDelete {
+			return "/georeplication", nil
+		}
+
 		return "/volumes/" + volume.Info.Id + "/georeplication", nil
 	})
 

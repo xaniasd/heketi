@@ -198,10 +198,11 @@ const (
 	GeoReplicationActionStatus GeoReplicationActionType = "status"
 	GeoReplicationActionPause  GeoReplicationActionType = "pause"
 	GeoReplicationActionResume GeoReplicationActionType = "resume"
+	GeoReplicationActionDelete GeoReplicationActionType = "delete"
 )
 
-type GeoReplicationVolumeStatus struct {
-	Volume GeoReplicationVolume `json:"volume"`
+type GeoReplicationStatus struct {
+	Volumes []GeoReplicationVolume `json:"volume"`
 }
 type GeoReplicationVolume struct {
 	VolumeName string                 `json:"name"`
@@ -245,11 +246,7 @@ type GeoReplicationInfo struct {
 type GeoReplicationRequest struct {
 	Action       GeoReplicationActionType `json:"action"`
 	ActionParams map[string]string        `json:"actionparams,omitempty"`
-	Force        bool                     `json:"force"`
 	GeoReplicationInfo
-}
-
-type GeoReplicationCreateResponse struct {
 }
 
 // Constructors
@@ -261,6 +258,55 @@ func NewVolumeInfoResponse() *VolumeInfoResponse {
 	info.Bricks = make([]BrickInfo, 0)
 
 	return info
+}
+
+func (v *GeoReplicationStatus) String() string {
+	var s string
+	for _, vol := range v.Volumes {
+		s = fmt.Sprintf("Master Volume Name: %v\n"+
+			"Session slave: %v\n",
+			vol.VolumeName,
+			vol.Sessions.SessionList[0].SessionSlave)
+
+		s += "Pairs:\n"
+		for _, p := range vol.Sessions.SessionList[0].Pairs {
+			s += fmt.Sprintf("\tMaster Node: %s\n"+
+				"\tMaster Brick: %s\n"+
+				"\tSlave User: %s\n"+
+				"\tSlave: %s\n"+
+				"\tSlave Node: %s\n"+
+				"\tStatus: %s\n"+
+				"\tCrawl Status: %s\n"+
+				"\tEntry: %s\n"+
+				"\tData: %s\n"+
+				"\tMeta: %s\n"+
+				"\tFailures: %s\n"+
+				"\tCheckpoint Completed: %s\n"+
+				"\tMaster Node UUID: %s\n"+
+				"\tLast Synced: %s\n"+
+				"\tCheckpoint Time: %s\n"+
+				"\tCheckpoint Completion Time: %s\n\n",
+				p.MasterNode,
+				p.MasterBrick,
+				p.SlaveUser,
+				p.Slave,
+				p.SlaveNode,
+				p.Status,
+				p.CrawlStatus,
+				p.Entry,
+				p.Data,
+				p.Meta,
+				p.Failures,
+				p.CheckpointCompleted,
+				p.MasterNodeUUID,
+				p.LastSynced,
+				p.CheckpointTime,
+				p.CheckpointCompletionTime,
+			)
+		}
+	}
+
+	return s
 }
 
 // String functions

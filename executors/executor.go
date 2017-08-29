@@ -31,14 +31,16 @@ type Executor interface {
 	VolumeInfo(host string, volume string) (*Volume, error)
 	GeoReplicationCreate(host, volume string, geoRep *GeoReplicationRequest) error
 	GeoReplicationConfig(host, volume string, geoRep *GeoReplicationRequest) error
-	GeoReplicationVolumeStatus(host, volume string) ([]GeoReplicationSession, error)
+	GeoReplicationAction(host, volume, action string, geoRep *GeoReplicationRequest) error
+	GeoReplicationVolumeStatus(host, volume string) (*GeoReplicationStatus, error)
+	GeoReplicationStatus(host string) (*GeoReplicationStatus, error)
 	HealInfo(host string, volume string) (*HealInfo, error)
 	SetLogLevel(level string)
 }
 
-type GeoReplicationVolumeStatus struct {
-	XMLName xml.Name             `xml:"geoRep"`
-	Volume  GeoReplicationVolume `xml:"volume"`
+type GeoReplicationStatus struct {
+	XMLName xml.Name               `xml:"geoRep"`
+	Volume  []GeoReplicationVolume `xml:"volume"`
 }
 type GeoReplicationVolume struct {
 	XMLName    xml.Name               `xml:"volume"`

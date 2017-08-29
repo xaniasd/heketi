@@ -13,6 +13,7 @@ import (
 func (s *SshExecutor) GeoReplicationCreate(host, volume string, geoRep *executors.GeoReplicationRequest) error {
 	logger.Debug("In GeoReplicationCreate")
 	logger.Debug("actionParams: %+v", geoRep.ActionParams)
+
 	godbc.Require(host != "")
 	godbc.Require(volume != "")
 	godbc.Require(geoRep.SlaveHost != "")
@@ -38,18 +39,71 @@ func (s *SshExecutor) GeoReplicationCreate(host, volume string, geoRep *executor
 	return nil
 }
 
+// GeoReplicationAction executes the given geo-replication action for the given volume
+func (s *SshExecutor) GeoReplicationAction(host, volume, action string, geoRep *executors.GeoReplicationRequest) error {
+	logger.Debug("In GeoReplicationAction: %s", action)
+
+	godbc.Require(host != "")
+	godbc.Require(volume != "")
+	godbc.Require(geoRep.SlaveHost != "")
+	godbc.Require(geoRep.SlaveVolume != "")
+
+	cmd := fmt.Sprintf("gluster --mode=script volume geo-replication %s %s::%s %s", volume, geoRep.SlaveHost, geoRep.SlaveVolume, action)
+
+	if force, ok := geoRep.ActionParams["force"]; ok && force == "true" {
+		cmd = fmt.Sprintf("%s %s", cmd, force)
+	}
+
+	commands := []string{cmd}
+	if _, err := s.RemoteExecutor.RemoteCommandExecute(host, commands, 10); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// GeoReplicationStatus returns the geo-replication status
+func (s *SshExecutor) GeoReplicationStatus(host string) (*executors.GeoReplicationStatus, error) {
+	logger.Debug("In GeoReplicationStatus")
+
+	godbc.Require(host != "")
+
+	type CliOutput struct {
+		OpRet        int                            `xml:"opRet"`
+		OpErrno      int                            `xml:"opErrno"`
+		OpErrStr     string                         `xml:"opErrstr"`
+		GeoRepStatus executors.GeoReplicationStatus `xml:"geoRep"`
+	}
+
+	commands := []string{"gluster --mode=script volume geo-replication status --xml"}
+
+	var output []string
+	var err error
+	if output, err = s.RemoteExecutor.RemoteCommandExecute(host, commands, 10); err != nil {
+		return nil, err
+	}
+
+	var geoRepStatus CliOutput
+
+	if err := xml.Unmarshal([]byte(output[0]), &geoRepStatus); err != nil {
+		return nil, fmt.Errorf("Unable to determine geo-replication status on host %s: %v", host, err)
+	}
+
+	return &geoRepStatus.GeoRepStatus, nil
+}
+
 // GeoReplicationVolumeStatus returns the geo-replication status of a specific volume
-func (s *SshExecutor) GeoReplicationVolumeStatus(host, volume string) ([]executors.GeoReplicationSession, error) {
+func (s *SshExecutor) GeoReplicationVolumeStatus(host, volume string) (*executors.GeoReplicationStatus, error) {
 	logger.Debug("In GeoReplicationVolumeStatus")
 
 	godbc.Require(host != "")
 	godbc.Require(volume != "")
 
 	type CliOutput struct {
-		OpRet        int                                  `xml:"opRet"`
-		OpErrno      int                                  `xml:"opErrno"`
-		OpErrStr     string                               `xml:"opErrstr"`
-		GeoRepStatus executors.GeoReplicationVolumeStatus `xml:"geoRep"`
+		OpRet        int                            `xml:"opRet"`
+		OpErrno      int                            `xml:"opErrno"`
+		OpErrStr     string                         `xml:"opErrstr"`
+		GeoRepStatus executors.GeoReplicationStatus `xml:"geoRep"`
 	}
 
 	cmd := fmt.Sprintf("gluster --mode=script volume geo-replication %s status --xml", volume)
@@ -67,9 +121,7 @@ func (s *SshExecutor) GeoReplicationVolumeStatus(host, volume string) ([]executo
 		return nil, fmt.Errorf("Unable to determine geo-replication status for volume %v: %v", volume, err)
 	}
 
-	logger.Debug("Unmarshalled: %+v", geoRepStatus)
-
-	return geoRepStatus.GeoRepStatus.Volume.Sessions.SessionList, nil
+	return &geoRepStatus.GeoRepStatus, nil
 }
 
 // GeoReplicationConfig configures the geo-replication session for the given volume
@@ -106,14 +158,33 @@ func (s *SshExecutor) createConfigCommands(volume string, geoRep *executors.GeoR
 				continue
 			}
 			commands = append(commands, fmt.Sprintf(cmdTpl, volume, geoRep.SlaveHost, geoRep.SlaveVolume, param, value))
+		case "ignore-deletes":
+			if value != "false" && value != "true" {
+				logger.LogError("Invalid value %v for config option %s", value, param)
+				continue
+			}
+
+			// set to 1 if explicitly set to true, skip otherwise
+			if value == "true" {
+				commands = append(commands, fmt.Sprintf(cmdTpl, volume, geoRep.SlaveHost, geoRep.SlaveVolume, param, "1"))
+			}
 		// Integer parameters
-		case "timeout", "sync-jobs", "ssh_port":
+		case "timeout", "sync-jobs":
+			if _, err := strconv.Atoi(value); err != nil {
+				logger.LogError("Invalid value %v for config option %s", value, param)
+				continue
+			}
+			commands = append(commands, fmt.Sprintf(cmdTpl, volume, geoRep.SlaveHost, geoRep.SlaveVolume, param, value))
+		case "ssh-port":
+			// due to gluster cli client inconsistency, set the parameter to ssh_port
+			param = "ssh_port"
 			if _, err := strconv.Atoi(value); err != nil {
 				logger.LogError("Invalid value %v for config option %s", value, param)
 				continue
 			}
 			commands = append(commands, fmt.Sprintf(cmdTpl, volume, geoRep.SlaveHost, geoRep.SlaveVolume, param, value))
 		}
+
 	}
 
 	return commands

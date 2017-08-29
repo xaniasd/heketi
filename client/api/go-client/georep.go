@@ -22,51 +22,117 @@ import (
 	"github.com/heketi/utils"
 )
 
-func (c *Client) GeoReplicationCreate(id string, request *api.GeoReplicationRequest) error {
+func (c *Client) GeoReplicationPostAction(id string, request *api.GeoReplicationRequest) (*api.GeoReplicationStatus, error) {
 	// Marshal request to JSON
 	buffer, err := json.Marshal(request)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Create a request
 	req, err := http.NewRequest("POST", c.host+"/volumes/"+id+"/georeplication", bytes.NewBuffer(buffer))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	// Set token
 	err = c.setToken(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Send request
 	r, err := c.do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if r.StatusCode != http.StatusAccepted {
-		return utils.GetErrorFromResponse(r)
+		return nil, utils.GetErrorFromResponse(r)
 	}
 
 	// Wait for response
 	r, err = c.waitForResponseWithTimer(r, time.Second)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if r.StatusCode != http.StatusOK {
-		return utils.GetErrorFromResponse(r)
+		return nil, utils.GetErrorFromResponse(r)
 	}
 
 	// Read JSON response
-	var resp api.GeoReplicationCreateResponse
+	var resp api.GeoReplicationStatus
 	err = utils.GetJsonFromResponse(r, &resp)
 	r.Body.Close()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	return &resp, nil
+}
+
+func (c *Client) GeoReplicationVolumeStatus(id string) (*api.GeoReplicationStatus, error) {
+	// Create request
+	req, err := http.NewRequest("GET", c.host+"/volumes/"+id+"/georeplication", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set token
+	err = c.setToken(req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get status
+	r, err := c.do(req)
+	if err != nil {
+		return nil, err
+	}
+	if r.StatusCode != http.StatusOK {
+		return nil, utils.GetErrorFromResponse(r)
+	}
+
+	// Read JSON response
+	var status api.GeoReplicationStatus
+	err = utils.GetJsonFromResponse(r, &status)
+	r.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	return &status, nil
+}
+
+func (c *Client) GeoReplicationStatus() (*api.GeoReplicationStatus, error) {
+	// Create request
+	req, err := http.NewRequest("GET", c.host+"/georeplication", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set token
+	err = c.setToken(req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get status
+	r, err := c.do(req)
+	if err != nil {
+		return nil, err
+	}
+	if r.StatusCode != http.StatusOK {
+		return nil, utils.GetErrorFromResponse(r)
+	}
+
+	// Read JSON response
+	var status api.GeoReplicationStatus
+	err = utils.GetJsonFromResponse(r, &status)
+	r.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	return &status, nil
 }

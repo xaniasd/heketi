@@ -31,7 +31,9 @@ type MockExecutor struct {
 	MockVolumeInfo                 func(host string, volume string) (*executors.Volume, error)
 	MockGeoReplicationCreate       func(host string, volume string, geoRep *executors.GeoReplicationRequest) error
 	MockGeoReplicationConfig       func(host string, volume string, geoRep *executors.GeoReplicationRequest) error
-	MockGeoReplicationVolumeStatus func(host string, volume string) ([]executors.GeoReplicationSession, error)
+	MockGeoReplicationAction       func(host string, volume string, action string, geoRep *executors.GeoReplicationRequest) error
+	MockGeoReplicationVolumeStatus func(host string, volume string) (*executors.GeoReplicationStatus, error)
+	MockGeoReplicationStatus       func(host string) (*executors.GeoReplicationStatus, error)
 	MockHealInfo                   func(host string, volume string) (*executors.HealInfo, error)
 }
 
@@ -125,7 +127,15 @@ func NewMockExecutor() (*MockExecutor, error) {
 		return nil
 	}
 
-	m.MockGeoReplicationVolumeStatus = func(host, volume string) ([]executors.GeoReplicationSession, error) {
+	m.MockGeoReplicationAction = func(host, volume, action string, geoRep *executors.GeoReplicationRequest) error {
+		return nil
+	}
+
+	m.MockGeoReplicationVolumeStatus = func(host, volume string) (*executors.GeoReplicationStatus, error) {
+		return nil, nil
+	}
+
+	m.MockGeoReplicationStatus = func(host string) (*executors.GeoReplicationStatus, error) {
 		return nil, nil
 	}
 
@@ -208,6 +218,14 @@ func (m *MockExecutor) GeoReplicationConfig(host, volume string, geoRep *executo
 	return m.MockGeoReplicationConfig(host, volume, geoRep)
 }
 
-func (m *MockExecutor) GeoReplicationVolumeStatus(host, volume string) ([]executors.GeoReplicationSession, error) {
+func (m *MockExecutor) GeoReplicationAction(host, volume, action string, geoRep *executors.GeoReplicationRequest) error {
+	return m.MockGeoReplicationAction(host, volume, action, geoRep)
+}
+
+func (m *MockExecutor) GeoReplicationVolumeStatus(host, volume string) (*executors.GeoReplicationStatus, error) {
 	return m.MockGeoReplicationVolumeStatus(host, volume)
+}
+
+func (m *MockExecutor) GeoReplicationStatus(host string) (*executors.GeoReplicationStatus, error) {
+	return m.MockGeoReplicationStatus(host)
 }
