@@ -465,6 +465,75 @@ func TestClientDevice(t *testing.T) {
 
 }
 
+func TestClientGeoreplication(t *testing.T) {
+	db := tests.Tempfile()
+	defer os.Remove(db)
+
+	// Create the app
+	app := glusterfs.NewTestApp(db)
+	defer app.Close()
+
+	// Setup the server
+	ts := setupHeketiServer(app)
+	defer ts.Close()
+
+	// Create cluster
+	c := NewClient(ts.URL, "admin", TEST_ADMIN_KEY)
+	tests.Assert(t, c != nil)
+	cluster, err := c.ClusterCreate()
+	tests.Assert(t, err == nil)
+
+	// Create node request packet
+	for n := 0; n < 4; n++ {
+		nodeReq := &api.NodeAddRequest{}
+		nodeReq.ClusterId = cluster.Id
+		nodeReq.Hostnames.Manage = []string{"manage" + fmt.Sprintf("%v", n)}
+		nodeReq.Hostnames.Storage = []string{"storage" + fmt.Sprintf("%v", n)}
+		nodeReq.Zone = n + 1
+
+		// Create node
+		node, err := c.NodeAdd(nodeReq)
+		tests.Assert(t, err == nil)
+
+		// Create a device request
+		sg := utils.NewStatusGroup()
+		for i := 0; i < 50; i++ {
+			sg.Add(1)
+			go func() {
+				defer sg.Done()
+
+				deviceReq := &api.DeviceAddRequest{}
+				deviceReq.Name = "sd" + utils.GenUUID()[:8]
+				deviceReq.NodeId = node.Id
+
+				// Create device
+				err := c.DeviceAdd(deviceReq)
+				sg.Err(err)
+
+			}()
+		}
+		tests.Assert(t, sg.Result() == nil)
+	}
+
+	// Get geo-replication status
+	status, err := c.GeoReplicationStatus()
+	tests.Assert(t, err == nil)
+	tests.Assert(t, len(status.Volumes) == 0)
+
+	// Create a volume
+	volumeReq := &api.VolumeCreateRequest{}
+	volumeReq.Size = 10
+	volume, err := c.VolumeCreate(volumeReq)
+	tests.Assert(t, err == nil)
+	tests.Assert(t, volume.Id != "")
+	tests.Assert(t, volume.Size == volumeReq.Size)
+
+	// Get geo-replication volume status
+	status, err = c.GeoReplicationVolumeStatus(volume.Id)
+	tests.Assert(t, err != nil)
+	tests.Assert(t, status == nil)
+}
+
 func TestClientVolume(t *testing.T) {
 	db := tests.Tempfile()
 	defer os.Remove(db)

@@ -158,7 +158,7 @@ func (s *SshExecutor) createConfigCommands(volume string, geoRep *executors.GeoR
 	for param, value := range geoRep.ActionParams {
 		switch param {
 		// String parameters
-		case "log-level", "gluster-log-level", "changelog-log-level", "ssh-command", "rsync-command":
+		case "log-level", "gluster-log-level", "changelog-log-level", "ssh-command", "rsync-command", "checkpoint", "remote-gsyncd":
 			commands = append(commands, fmt.Sprintf(cmdTpl, volume, geoRep.SlaveHost, geoRep.SlaveVolume, param, value))
 		// Boolean parameters
 		case "use-tarssh", "use-meta-volume":

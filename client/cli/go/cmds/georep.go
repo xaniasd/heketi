@@ -56,6 +56,7 @@ func initGeoRepCommand() {
 	geoReplicationConfigCommand.Flags().String("changelog-log-level", "", "\n\tConfigure changelog-log-level for the specific volume")
 	geoReplicationConfigCommand.Flags().String("ssh-command", "", "\n\tConfigure ssh-command for the specific volume")
 	geoReplicationConfigCommand.Flags().String("rsync-command", "", "\n\tConfigure rsync-command for the specific volume")
+	geoReplicationConfigCommand.Flags().String("checkpoint", "now", "\n\tSupport checkpoint feature")
 }
 
 var geoReplicationCommand = &cobra.Command{
@@ -241,6 +242,7 @@ var geoReplicationConfigCommand = &cobra.Command{
 		addActionParam("changelog-log-level", "string", cmd, actionParams)
 		addActionParam("ssh-command", "string", cmd, actionParams)
 		addActionParam("rsync-command", "string", cmd, actionParams)
+		addActionParam("checkpoint", "string", cmd, actionParams)
 
 		// Create a client
 		heketi := client.NewClient(options.Url, options.User, options.Key)

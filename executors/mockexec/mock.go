@@ -132,11 +132,11 @@ func NewMockExecutor() (*MockExecutor, error) {
 	}
 
 	m.MockGeoReplicationVolumeStatus = func(host, volume string) (*executors.GeoReplicationStatus, error) {
-		return nil, nil
+		return &executors.GeoReplicationStatus{}, nil
 	}
 
 	m.MockGeoReplicationStatus = func(host string) (*executors.GeoReplicationStatus, error) {
-		return nil, nil
+		return &executors.GeoReplicationStatus{}, nil
 	}
 
 	return m, nil

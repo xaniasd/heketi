@@ -37,22 +37,18 @@ type Executor interface {
 }
 
 type GeoReplicationStatus struct {
-	XMLName xml.Name               `xml:"geoRep"`
-	Volume  []GeoReplicationVolume `xml:"volume"`
+	Volume []GeoReplicationVolume `xml:"volume"`
 }
 type GeoReplicationVolume struct {
-	XMLName    xml.Name               `xml:"volume"`
 	VolumeName string                 `xml:"name"`
 	Sessions   GeoReplicationSessions `xml:"sessions"`
 }
 
 type GeoReplicationSessions struct {
-	XMLName     xml.Name                `xml:"sessions"`
 	SessionList []GeoReplicationSession `xml:"session"`
 }
 
 type GeoReplicationSession struct {
-	XMLName      xml.Name             `xml:"session"`
 	SessionSlave string               `xml:"session_slave"`
 	Pairs        []GeoReplicationPair `xml:"pair"`
 }

@@ -260,10 +260,10 @@ func NewVolumeInfoResponse() *VolumeInfoResponse {
 	return info
 }
 
-func (v *GeoReplicationStatus) String() string {
+func (g *GeoReplicationStatus) String() string {
 	var s string
-	for _, vol := range v.Volumes {
-		s = fmt.Sprintf("Master Volume Name: %v\n"+
+	for _, vol := range g.Volumes {
+		s += fmt.Sprintf("Master Volume Name: %v\n"+
 			"Session slave: %v\n",
 			vol.VolumeName,
 			vol.Sessions.SessionList[0].SessionSlave)

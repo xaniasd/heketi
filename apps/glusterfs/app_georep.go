@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/boltdb/bolt"
 	"github.com/gorilla/mux"
@@ -131,7 +132,11 @@ func (a *App) GeoReplicationVolumeStatus(w http.ResponseWriter, r *http.Request)
 
 	resp, err := volume.NewGeoReplicationStatusResponse(a.executor, host)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		if strings.Contains(err.Error(), geoReplicationSessionNotFoundError) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 		logger.LogError("Failed to get geo-replication status: %s", err.Error())
 		return
 	}

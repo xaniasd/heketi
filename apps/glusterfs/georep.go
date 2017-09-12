@@ -1,6 +1,16 @@
+//
+// Copyright (c) 2015 The heketi Authors
+//
+// This file is licensed to you under your choice of the GNU Lesser
+// General Public License, version 3 or any later version (LGPLv3 or
+// later), or the GNU General Public License, version 2 (GPLv2), in all
+// cases as published by the Free Software Foundation.
+//
+
 package glusterfs
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/boltdb/bolt"
@@ -8,6 +18,8 @@ import (
 	"github.com/heketi/heketi/pkg/glusterfs/api"
 	"github.com/lpabon/godbc"
 )
+
+const geoReplicationSessionNotFoundError string = "No active geo-replication sessions"
 
 func (v *VolumeEntry) GeoReplicationAction(db *bolt.DB,
 	executor executors.Executor,
@@ -27,6 +39,9 @@ func (v *VolumeEntry) GeoReplicationAction(db *bolt.DB,
 
 	switch msg.Action {
 	case api.GeoReplicationActionCreate:
+		if option, ok := msg.ActionParams["option"]; !(ok && (option == "push-pem" || option == "no-verify")) {
+			return errors.New("Invalid action parameters for create action")
+		}
 		logger.Info("Creating geo-replication session for volume %s", v.Info.Id)
 		if err := executor.GeoReplicationCreate(host, v.Info.Name, geoRep); err != nil {
 			return err
@@ -49,15 +64,6 @@ func (v *VolumeEntry) GeoReplicationAction(db *bolt.DB,
 	return nil
 }
 
-//
-// Copyright (c) 2015 The heketi Authors
-//
-// This file is licensed to you under your choice of the GNU Lesser
-// General Public License, version 3 or any later version (LGPLv3 or
-// later), or the GNU General Public License, version 2 (GPLv2), in all
-// cases as published by the Free Software Foundation.
-//
-
 // NewGeoReplicationStatusResponse returns a geo-replication status response
 // populated with data from the executor
 func (v *VolumeEntry) NewGeoReplicationStatusResponse(executor executors.Executor,
@@ -69,7 +75,7 @@ func (v *VolumeEntry) NewGeoReplicationStatusResponse(executor executors.Executo
 	}
 
 	if len(status.Volume) < 1 {
-		return nil, fmt.Errorf("Could not get replication status for volume %s", v.Info.Id)
+		return nil, fmt.Errorf("%s for %s", geoReplicationSessionNotFoundError, v.Info.Id)
 	}
 
 	volume := newGeoReplicationVolume(status.Volume[0])
@@ -96,9 +102,11 @@ func (n *NodeEntry) NewGeoReplicationStatusResponse(executor executors.Executor)
 		Volumes: []api.GeoReplicationVolume{},
 	}
 
-	for _, volume := range status.Volume {
-		v := newGeoReplicationVolume(volume)
-		resp.Volumes = append(resp.Volumes, v)
+	if status != nil {
+		for _, volume := range status.Volume {
+			v := newGeoReplicationVolume(volume)
+			resp.Volumes = append(resp.Volumes, v)
+		}
 	}
 
 	return resp, nil
