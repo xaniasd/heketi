@@ -7,7 +7,7 @@
 // cases as published by the Free Software Foundation.
 //
 
-package sshexec
+package cmdexec
 
 import (
 	"encoding/xml"
@@ -19,9 +19,7 @@ import (
 )
 
 // GeoReplicationCreate creates a geo-rep session for the given volume
-func (s *SshExecutor) GeoReplicationCreate(host, volume string, geoRep *executors.GeoReplicationRequest) error {
-	logger.Debug("In GeoReplicationCreate")
-	logger.Debug("actionParams: %+v", geoRep.ActionParams)
+func (s *CmdExecutor) GeoReplicationCreate(host, volume string, geoRep *executors.GeoReplicationRequest) error {
 
 	godbc.Require(host != "")
 	godbc.Require(volume != "")
@@ -49,8 +47,7 @@ func (s *SshExecutor) GeoReplicationCreate(host, volume string, geoRep *executor
 }
 
 // GeoReplicationAction executes the given geo-replication action for the given volume
-func (s *SshExecutor) GeoReplicationAction(host, volume, action string, geoRep *executors.GeoReplicationRequest) error {
-	logger.Debug("In GeoReplicationAction: %s", action)
+func (s *CmdExecutor) GeoReplicationAction(host, volume, action string, geoRep *executors.GeoReplicationRequest) error {
 
 	godbc.Require(host != "")
 	godbc.Require(volume != "")
@@ -72,8 +69,7 @@ func (s *SshExecutor) GeoReplicationAction(host, volume, action string, geoRep *
 }
 
 // GeoReplicationStatus returns the geo-replication status
-func (s *SshExecutor) GeoReplicationStatus(host string) (*executors.GeoReplicationStatus, error) {
-	logger.Debug("In GeoReplicationStatus")
+func (s *CmdExecutor) GeoReplicationStatus(host string) (*executors.GeoReplicationStatus, error) {
 
 	godbc.Require(host != "")
 
@@ -102,8 +98,7 @@ func (s *SshExecutor) GeoReplicationStatus(host string) (*executors.GeoReplicati
 }
 
 // GeoReplicationVolumeStatus returns the geo-replication status of a specific volume
-func (s *SshExecutor) GeoReplicationVolumeStatus(host, volume string) (*executors.GeoReplicationStatus, error) {
-	logger.Debug("In GeoReplicationVolumeStatus")
+func (s *CmdExecutor) GeoReplicationVolumeStatus(host, volume string) (*executors.GeoReplicationStatus, error) {
 
 	godbc.Require(host != "")
 	godbc.Require(volume != "")
@@ -134,8 +129,7 @@ func (s *SshExecutor) GeoReplicationVolumeStatus(host, volume string) (*executor
 }
 
 // GeoReplicationConfig configures the geo-replication session for the given volume
-func (s *SshExecutor) GeoReplicationConfig(host, volume string, geoRep *executors.GeoReplicationRequest) error {
-	logger.Debug("In GeoReplicationConfig")
+func (s *CmdExecutor) GeoReplicationConfig(host, volume string, geoRep *executors.GeoReplicationRequest) error {
 
 	godbc.Require(host != "")
 	godbc.Require(volume != "")
@@ -145,13 +139,13 @@ func (s *SshExecutor) GeoReplicationConfig(host, volume string, geoRep *executor
 	commands := s.createConfigCommands(volume, geoRep)
 
 	if _, err := s.RemoteExecutor.RemoteCommandExecute(host, commands, 10); err != nil {
-		logger.LogError("Invalid configuration for volume georeplication %s", volume)
+
 		return err
 	}
 	return nil
 }
 
-func (s *SshExecutor) createConfigCommands(volume string, geoRep *executors.GeoReplicationRequest) []string {
+func (s *CmdExecutor) createConfigCommands(volume string, geoRep *executors.GeoReplicationRequest) []string {
 	commands := []string{}
 
 	cmdTpl := "gluster --mode=script volume geo-replication %s %s::%s config %s %s"
@@ -163,13 +157,13 @@ func (s *SshExecutor) createConfigCommands(volume string, geoRep *executors.GeoR
 		// Boolean parameters
 		case "use-tarssh", "use-meta-volume":
 			if value != "false" && value != "true" {
-				logger.LogError("Invalid value %v for config option %s", value, param)
+
 				continue
 			}
 			commands = append(commands, fmt.Sprintf(cmdTpl, volume, geoRep.SlaveHost, geoRep.SlaveVolume, param, value))
 		case "ignore-deletes":
 			if value != "false" && value != "true" {
-				logger.LogError("Invalid value %v for config option %s", value, param)
+
 				continue
 			}
 
@@ -180,7 +174,7 @@ func (s *SshExecutor) createConfigCommands(volume string, geoRep *executors.GeoR
 		// Integer parameters
 		case "timeout", "sync-jobs":
 			if _, err := strconv.Atoi(value); err != nil {
-				logger.LogError("Invalid value %v for config option %s", value, param)
+
 				continue
 			}
 			commands = append(commands, fmt.Sprintf(cmdTpl, volume, geoRep.SlaveHost, geoRep.SlaveVolume, param, value))
@@ -188,7 +182,7 @@ func (s *SshExecutor) createConfigCommands(volume string, geoRep *executors.GeoR
 			// due to gluster cli client inconsistency, set the parameter to ssh_port
 			param = "ssh_port"
 			if _, err := strconv.Atoi(value); err != nil {
-				logger.LogError("Invalid value %v for config option %s", value, param)
+
 				continue
 			}
 			commands = append(commands, fmt.Sprintf(cmdTpl, volume, geoRep.SlaveHost, geoRep.SlaveVolume, param, value))
