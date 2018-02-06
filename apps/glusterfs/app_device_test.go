@@ -58,7 +58,7 @@ func TestDeviceAddBadRequests(t *testing.T) {
 
 	// Make a request with no device
 	request = []byte(`{
-        "node" : "123"
+        "node" : "3071582c8575a06d824f6bfc125eb270"
     }`)
 
 	// Post bad JSON
@@ -68,14 +68,14 @@ func TestDeviceAddBadRequests(t *testing.T) {
 
 	// Make a request with unknown node
 	request = []byte(`{
-        "node" : "123",
+        "node" : "3071582c8575a06d824f6bfc125eb270",
         "name" : "/dev/fake"
     }`)
 
 	// Post unknown node
 	r, err = http.Post(ts.URL+"/devices", "application/json", bytes.NewBuffer(request))
 	tests.Assert(t, err == nil)
-	tests.Assert(t, r.StatusCode == http.StatusNotFound)
+	tests.Assert(t, r.StatusCode == http.StatusNotFound, r.StatusCode)
 
 }
 
@@ -95,7 +95,13 @@ func TestDeviceAddDelete(t *testing.T) {
 
 	// Add Cluster then a Node on the cluster
 	// node
-	cluster := NewClusterEntryFromRequest()
+	cluster_req := &api.ClusterCreateRequest{
+		ClusterFlags: api.ClusterFlags{
+			Block: true,
+			File:  true,
+		},
+	}
+	cluster := NewClusterEntryFromRequest(cluster_req)
 	nodereq := &api.NodeAddRequest{
 		ClusterId: cluster.Info.Id,
 		Hostnames: api.HostAddresses{
@@ -341,7 +347,13 @@ func TestDeviceAddCleansUp(t *testing.T) {
 
 	// Add Cluster then a Node on the cluster
 	// node
-	cluster := NewClusterEntryFromRequest()
+	cluster_req := &api.ClusterCreateRequest{
+		ClusterFlags: api.ClusterFlags{
+			Block: true,
+			File:  true,
+		},
+	}
+	cluster := NewClusterEntryFromRequest(cluster_req)
 	nodereq := &api.NodeAddRequest{
 		ClusterId: cluster.Info.Id,
 		Hostnames: api.HostAddresses{
@@ -550,16 +562,18 @@ func TestDeviceState(t *testing.T) {
 	ts := httptest.NewServer(router)
 	defer ts.Close()
 
-	// Create mock allocator
-	mockAllocator := NewMockAllocator(app.db)
-	app.allocator = mockAllocator
-
 	// Create a client
 	c := client.NewClientNoAuth(ts.URL)
 	tests.Assert(t, c != nil)
 
 	// Create Cluster
-	cluster, err := c.ClusterCreate()
+	cluster_req := &api.ClusterCreateRequest{
+		ClusterFlags: api.ClusterFlags{
+			Block: true,
+			File:  true,
+		},
+	}
+	cluster, err := c.ClusterCreate(cluster_req)
 	tests.Assert(t, err == nil)
 
 	// Create Node
@@ -595,8 +609,8 @@ func TestDeviceState(t *testing.T) {
 	tests.Assert(t, deviceInfo.State == "online")
 
 	// Check that the device is in the ring
-	tests.Assert(t, len(mockAllocator.clustermap[cluster.Id]) == 1)
-	tests.Assert(t, mockAllocator.clustermap[cluster.Id][0] == device.Id)
+	tests.Assert(t, app.Allocator().HasDevice(cluster.Id, node.Zone,
+		node.Id, device.Id))
 
 	// Set offline
 	request := []byte(`{
@@ -623,7 +637,8 @@ func TestDeviceState(t *testing.T) {
 		}
 	}
 	// Check it was removed from the ring
-	tests.Assert(t, len(mockAllocator.clustermap[cluster.Id]) == 0)
+	tests.Assert(t, !app.Allocator().HasDevice(cluster.Id, node.Zone,
+		node.Id, device.Id))
 
 	// Get Device Info
 	r, err = http.Get(ts.URL + "/devices/" + device.Id)
@@ -665,8 +680,8 @@ func TestDeviceState(t *testing.T) {
 	}
 
 	// Check that the device is in the ring
-	tests.Assert(t, len(mockAllocator.clustermap[cluster.Id]) == 1)
-	tests.Assert(t, mockAllocator.clustermap[cluster.Id][0] == device.Id)
+	tests.Assert(t, app.Allocator().HasDevice(cluster.Id, node.Zone,
+		node.Id, device.Id))
 
 	// Get Device Info
 	r, err = http.Get(ts.URL + "/devices/" + device.Id)
@@ -689,26 +704,11 @@ func TestDeviceState(t *testing.T) {
 	r, err = http.Post(ts.URL+"/devices/"+device.Id+"/state",
 		"application/json", bytes.NewBuffer(request))
 	tests.Assert(t, err == nil)
-	tests.Assert(t, r.StatusCode == http.StatusAccepted)
-	location, err = r.Location()
-	tests.Assert(t, err == nil)
-
-	// Query queue until finished
-	for {
-		r, err = http.Get(location.String())
-		tests.Assert(t, err == nil)
-		if r.Header.Get("X-Pending") == "true" {
-			tests.Assert(t, r.StatusCode == http.StatusOK)
-			time.Sleep(time.Millisecond * 10)
-		} else {
-			tests.Assert(t, r.StatusCode == http.StatusInternalServerError)
-			break
-		}
-	}
+	tests.Assert(t, r.StatusCode == http.StatusBadRequest, r.StatusCode)
 
 	// Check that the device is still in the ring
-	tests.Assert(t, len(mockAllocator.clustermap[cluster.Id]) == 1)
-	tests.Assert(t, mockAllocator.clustermap[cluster.Id][0] == device.Id)
+	tests.Assert(t, app.Allocator().HasDevice(cluster.Id, node.Zone,
+		node.Id, device.Id))
 
 	// Make sure the state did not change
 	r, err = http.Get(ts.URL + "/devices/" + device.Id)

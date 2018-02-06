@@ -36,7 +36,7 @@ heketi-ci-docker.img
 
 # Generated files
 heketi
-client/cli/go/heketi-cli
+heketi-cli
 dist
 
 # Other
@@ -48,7 +48,9 @@ log
 .vscode
 debug
 
+coverage
+packagecover.out
 .coverage
 .tox
 *.log
-
+.envrc

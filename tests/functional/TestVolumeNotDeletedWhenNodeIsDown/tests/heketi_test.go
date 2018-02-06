@@ -72,7 +72,13 @@ func setupCluster(t *testing.T) {
 		go func(nodes_in_cluster []string) {
 			defer sg.Done()
 			// Create a cluster
-			cluster, err := heketi.ClusterCreate()
+			cluster_req := &api.ClusterCreateRequest{
+				ClusterFlags: api.ClusterFlags{
+					Block: true,
+					File:  true,
+				},
+			}
+			cluster, err := heketi.ClusterCreate(cluster_req)
 			if err != nil {
 				logger.Err(err)
 				sg.Err(err)
@@ -117,13 +123,13 @@ func setupCluster(t *testing.T) {
 
 	// Wait here for results
 	err := sg.Result()
-	tests.Assert(t, err == nil)
+	tests.Assert(t, err == nil, "expected err == nil, got:", err)
 
 }
 
 func teardownCluster(t *testing.T) {
 	clusters, err := heketi.ClusterList()
-	tests.Assert(t, err == nil)
+	tests.Assert(t, err == nil, "expected err == nil, got:", err)
 
 	sg := utils.NewStatusGroup()
 	for _, cluster := range clusters.Clusters {
@@ -207,12 +213,12 @@ func teardownCluster(t *testing.T) {
 	}
 
 	err = sg.Result()
-	tests.Assert(t, err == nil)
+	tests.Assert(t, err == nil, "expected err == nil, got:", err)
 }
 
 func TestConnection(t *testing.T) {
 	err := heketi.Hello()
-	tests.Assert(t, err == nil)
+	tests.Assert(t, err == nil, "expected err == nil, got:", err)
 }
 
 func TestVolumeNotDeletedWhenNodeIsDown(t *testing.T) {
@@ -228,7 +234,7 @@ func TestVolumeNotDeletedWhenNodeIsDown(t *testing.T) {
 	volReq.Durability.Replicate.Replica = 3
 
 	volInfo, err := heketi.VolumeCreate(volReq)
-	tests.Assert(t, err == nil)
+	tests.Assert(t, err == nil, "expected err == nil, got:", err)
 
 	// SSH into one system and power it off
 	exec := ssh.NewSshExecWithKeyFile(logger, "vagrant", "../config/insecure_private_key")
@@ -245,7 +251,7 @@ func TestVolumeNotDeletedWhenNodeIsDown(t *testing.T) {
 
 	// Check that the volume is still there
 	info, err := heketi.VolumeInfo(volInfo.Id)
-	tests.Assert(t, err == nil)
+	tests.Assert(t, err == nil, "expected err == nil, got:", err)
 	tests.Assert(t, info.Id == volInfo.Id)
 
 	// Now poweroff node
@@ -264,6 +270,6 @@ func TestVolumeNotDeletedWhenNodeIsDown(t *testing.T) {
 
 	// Check that the volume is still there
 	info, err = heketi.VolumeInfo(volInfo.Id)
-	tests.Assert(t, err == nil)
+	tests.Assert(t, err == nil, "expected err == nil, got:", err)
 	tests.Assert(t, info.Id == volInfo.Id)
 }

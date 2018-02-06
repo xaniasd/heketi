@@ -12,16 +12,17 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+
 	"github.com/gorilla/mux"
 	"github.com/heketi/heketi/apps"
 	"github.com/heketi/heketi/apps/glusterfs"
 	"github.com/heketi/heketi/middleware"
 	"github.com/spf13/cobra"
 	"github.com/urfave/negroni"
-	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
 
 	restclient "k8s.io/client-go/rest"
 )
@@ -37,6 +38,9 @@ var (
 	HEKETI_VERSION = "(dev)"
 	configfile     string
 	showVersion    bool
+	jsonFile       string
+	dbFile         string
+	debugOutput    bool
 )
 
 var RootCmd = &cobra.Command{
@@ -55,7 +59,62 @@ var RootCmd = &cobra.Command{
 		} else {
 			// Quit here if all we needed to do was show version
 			os.Exit(0)
+
 		}
+	},
+}
+
+var dbCmd = &cobra.Command{
+	Use:   "db",
+	Short: "heketi db management",
+	Long:  "heketi db management",
+}
+
+var importdbCmd = &cobra.Command{
+	Use:     "import",
+	Short:   "import creates a db file from JSON input",
+	Long:    "import creates a db file from JSON input",
+	Example: "heketi import db --jsonfile=/json/file/path/ --dbfile=/db/file/path/",
+	Run: func(cmd *cobra.Command, args []string) {
+		if jsonFile == "" {
+			fmt.Fprintln(os.Stderr, "Please provide file for input")
+			os.Exit(1)
+		}
+		if dbFile == "" {
+			fmt.Fprintln(os.Stderr, "Please provide path for db file")
+			os.Exit(1)
+		}
+		err := glusterfs.DbCreate(jsonFile, dbFile, debugOutput)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "db creation failed: %v\n", err.Error())
+			os.Exit(1)
+		}
+		fmt.Fprintln(os.Stderr, "DB imported to", dbFile)
+		os.Exit(0)
+	},
+}
+
+var exportdbCmd = &cobra.Command{
+	Use:     "export",
+	Short:   "export creates a JSON file from a db file",
+	Long:    "export creates a JSON file from a db file",
+	Example: "heketi db export --jsonfile=/json/file/path/ --dbfile=/db/file/path/",
+	Run: func(cmd *cobra.Command, args []string) {
+		if jsonFile == "" {
+			fmt.Fprintln(os.Stderr, "Please provide file for input")
+			os.Exit(1)
+		}
+		if dbFile == "" {
+			fmt.Fprintln(os.Stderr, "Please provide path for db file")
+			os.Exit(1)
+		}
+		err := glusterfs.DbDump(jsonFile, dbFile, debugOutput)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to dump db: %v\n", err.Error())
+			os.Exit(1)
+		}
+		fmt.Fprintln(os.Stderr, "DB exported to", jsonFile)
+		os.Exit(0)
 	},
 }
 
@@ -63,6 +122,18 @@ func init() {
 	RootCmd.Flags().StringVar(&configfile, "config", "", "Configuration file")
 	RootCmd.Flags().BoolVarP(&showVersion, "version", "v", false, "Show version")
 	RootCmd.SilenceUsage = true
+	RootCmd.AddCommand(dbCmd)
+	dbCmd.SilenceUsage = true
+	dbCmd.AddCommand(importdbCmd)
+	importdbCmd.Flags().StringVar(&jsonFile, "jsonfile", "", "Input file with data in JSON format")
+	importdbCmd.Flags().StringVar(&dbFile, "dbfile", "", "File path for db to be created")
+	importdbCmd.Flags().BoolVar(&debugOutput, "debug", false, "Show debug logs on stdout")
+	importdbCmd.SilenceUsage = true
+	dbCmd.AddCommand(exportdbCmd)
+	exportdbCmd.Flags().StringVar(&dbFile, "dbfile", "", "File path for db to be exported")
+	exportdbCmd.Flags().StringVar(&jsonFile, "jsonfile", "", "File path for JSON file to be created")
+	exportdbCmd.Flags().BoolVar(&debugOutput, "debug", false, "Show debug logs on stdout")
+	exportdbCmd.SilenceUsage = true
 }
 
 func setWithEnvVariables(options *Config) {
@@ -122,7 +193,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Substitue values using any set environment variables
+	// Substitute values using any set environment variables
 	setWithEnvVariables(&options)
 
 	// Use negroni to add middleware.  Here we add two

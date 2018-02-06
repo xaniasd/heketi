@@ -28,6 +28,13 @@ func (a *App) NodeAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	err = msg.Validate()
+	if err != nil {
+		http.Error(w, "validation failed: "+err.Error(), http.StatusBadRequest)
+		logger.LogError("validation failed: " + err.Error())
+		return
+	}
+
 	// Check information in JSON request
 	if len(msg.Hostnames.Manage) == 0 {
 		http.Error(w, "Manage hostname missing", http.StatusBadRequest)
@@ -340,6 +347,12 @@ func (a *App) NodeSetState(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "request unable to be parsed", 422)
 		return
 	}
+	err = msg.Validate()
+	if err != nil {
+		http.Error(w, "validation failed: "+err.Error(), http.StatusBadRequest)
+		logger.LogError("validation failed: " + err.Error())
+		return
+	}
 
 	// Check state is supported
 	err = a.db.View(func(tx *bolt.Tx) error {
@@ -360,7 +373,7 @@ func (a *App) NodeSetState(w http.ResponseWriter, r *http.Request) {
 
 	// Set state
 	a.asyncManager.AsyncHttpRedirectFunc(w, r, func() (string, error) {
-		err = node.SetState(a.db, a.executor, a.allocator, msg.State)
+		err = node.SetState(a.db, a.executor, a.Allocator(), msg.State)
 		if err != nil {
 			return "", err
 		}

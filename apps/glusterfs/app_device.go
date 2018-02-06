@@ -28,6 +28,13 @@ func (a *App) DeviceAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	err = msg.Validate()
+	if err != nil {
+		http.Error(w, "validation failed: "+err.Error(), http.StatusBadRequest)
+		logger.LogError("validation failed: " + err.Error())
+		return
+	}
+
 	// Check the message has devices
 	if msg.Name == "" {
 		http.Error(w, "no devices added", http.StatusBadRequest)
@@ -114,11 +121,6 @@ func (a *App) DeviceAdd(w http.ResponseWriter, r *http.Request) {
 			// Add device to node
 			nodeEntry.DeviceAdd(device.Info.Id)
 
-			clusterEntry, err := NewClusterEntryFromId(tx, nodeEntry.Info.ClusterId)
-			if err != nil {
-				return err
-			}
-
 			// Commit
 			err = nodeEntry.Save(tx)
 			if err != nil {
@@ -127,12 +129,6 @@ func (a *App) DeviceAdd(w http.ResponseWriter, r *http.Request) {
 
 			// Save drive
 			err = device.Save(tx)
-			if err != nil {
-				return err
-			}
-
-			// Add to allocator
-			err = a.allocator.AddDevice(clusterEntry, nodeEntry, device)
 			if err != nil {
 				return err
 			}
@@ -200,9 +196,8 @@ func (a *App) DeviceDelete(w http.ResponseWriter, r *http.Request) {
 
 	// Check request
 	var (
-		device  *DeviceEntry
-		node    *NodeEntry
-		cluster *ClusterEntry
+		device *DeviceEntry
+		node   *NodeEntry
 	)
 	err := a.db.View(func(tx *bolt.Tx) error {
 		var err error
@@ -230,12 +225,6 @@ func (a *App) DeviceDelete(w http.ResponseWriter, r *http.Request) {
 			return logger.Err(err)
 		}
 
-		// Save cluster to update allocator
-		cluster, err = NewClusterEntryFromId(tx, node.Info.ClusterId)
-		if err != nil {
-			return logger.Err(err)
-		}
-
 		return nil
 	})
 	if err != nil {
@@ -249,12 +238,6 @@ func (a *App) DeviceDelete(w http.ResponseWriter, r *http.Request) {
 		// Teardown device
 		err := a.executor.DeviceTeardown(node.ManageHostName(),
 			device.Info.Name, device.Info.Id)
-		if err != nil {
-			return "", err
-		}
-
-		// Remove device from allocator
-		err = a.allocator.RemoveDevice(cluster, node, device)
 		if err != nil {
 			return "", err
 		}
@@ -323,6 +306,12 @@ func (a *App) DeviceSetState(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "request unable to be parsed", 422)
 		return
 	}
+	err = msg.Validate()
+	if err != nil {
+		http.Error(w, "validation failed: "+err.Error(), http.StatusBadRequest)
+		logger.LogError("validation failed: " + err.Error())
+		return
+	}
 
 	// Check for valid id, return immediately if not valid
 	err = a.db.View(func(tx *bolt.Tx) error {
@@ -343,7 +332,7 @@ func (a *App) DeviceSetState(w http.ResponseWriter, r *http.Request) {
 
 	// Set state
 	a.asyncManager.AsyncHttpRedirectFunc(w, r, func() (string, error) {
-		err = device.SetState(a.db, a.executor, a.allocator, msg.State)
+		err = device.SetState(a.db, a.executor, a.Allocator(), msg.State)
 		if err != nil {
 			return "", err
 		}

@@ -42,10 +42,11 @@ class HeketiClient(object):
             + datetime.timedelta(seconds=1)
 
         # URI tampering protection
-        claims['qsh'] = hashlib.sha256(method + '&' + uri).hexdigest()
+        val = b'%s&%s' % (method.encode('utf8'), uri.encode('utf8'))
+        claims['qsh'] = hashlib.sha256(val).hexdigest()
 
         token = jwt.encode(claims, self.key, algorithm='HS256')
-        headers['Authorization'] = 'bearer ' + token
+        headers['Authorization'] = b'bearer ' + token
 
         return headers
 
@@ -97,10 +98,18 @@ class HeketiClient(object):
                 else:
                     return q
 
-    def cluster_create(self):
-        req = self._make_request('POST', '/clusters')
+    def cluster_create(self, cluster_options={}):
+        ''' cluster_options is a dict with cluster creation options:
+            https://github.com/heketi/heketi/wiki/API#cluster_create
+        '''
+        req = self._make_request('POST', '/clusters', cluster_options)
         if req.status_code == requests.codes.created:
             return req.json()
+
+    def cluster_setflags(self, cluster_id, cluster_options={}):
+        uri = "/clusters/" + cluster_id + "/flags"
+        req = self._make_request('POST', uri, cluster_options)
+        return req.status_code == requests.codes.ok
 
     def cluster_info(self, cluster_id):
         uri = "/clusters/" + cluster_id
@@ -340,3 +349,9 @@ class HeketiClient(object):
         req = self._make_request('GET', uri)
         if req.status_code == requests.codes.ok:
             return req.json()
+
+    def db_dump(self):
+        uri = '/db/dump'
+        req = self._make_request('GET', uri)
+        if req.status_code == requests.codes.ok:
+            return req

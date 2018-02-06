@@ -68,8 +68,14 @@ func TestTopology(t *testing.T) {
 
 	//Create multiple clusters
 	clusteridlist := make([]api.ClusterInfoResponse, 0)
+	cluster_req := &api.ClusterCreateRequest{
+		ClusterFlags: api.ClusterFlags{
+			Block: true,
+			File:  true,
+		},
+	}
 	for m := 0; m < 4; m++ {
-		cluster, err := c.ClusterCreate()
+		cluster, err := c.ClusterCreate(cluster_req)
 		tests.Assert(t, err == nil)
 		tests.Assert(t, cluster.Id != "")
 		clusteridlist = append(clusteridlist, *cluster)
@@ -86,11 +92,18 @@ func TestTopology(t *testing.T) {
 	}
 
 	//Create a cluster and add multiple nodes,devices and volumes
-	cluster, err := c.ClusterCreate()
+	cluster_req = &api.ClusterCreateRequest{
+		ClusterFlags: api.ClusterFlags{
+			Block: true,
+			File:  true,
+		},
+	}
+	cluster, err := c.ClusterCreate(cluster_req)
 	tests.Assert(t, err == nil)
 	tests.Assert(t, cluster.Id != "")
 	tests.Assert(t, len(cluster.Nodes) == 0)
 	tests.Assert(t, len(cluster.Volumes) == 0)
+	tests.Assert(t, len(cluster.BlockVolumes) == 0)
 
 	// Get information about the client
 	clusterinfo, err := c.ClusterInfo(cluster.Id)
@@ -119,12 +132,13 @@ func TestTopology(t *testing.T) {
 		// Create a device request
 		sg := utils.NewStatusGroup()
 		for i := 0; i < 50; i++ {
+			b := utils.GenUUID()
 			sg.Add(1)
 			go func() {
 				defer sg.Done()
 
 				deviceReq := &api.DeviceAddRequest{}
-				deviceReq.Name = "sd" + utils.GenUUID()[:8]
+				deviceReq.Name = "/sd" + b[:4] + b[24:]
 				deviceReq.NodeId = node.Id
 
 				// Create device
@@ -228,21 +242,27 @@ func TestClientCluster(t *testing.T) {
 	// Create cluster with unknown user
 	c := NewClient(ts.URL, "asdf", "")
 	tests.Assert(t, c != nil)
-	cluster, err := c.ClusterCreate()
+	cluster_req := &api.ClusterCreateRequest{
+		ClusterFlags: api.ClusterFlags{
+			Block: true,
+			File:  true,
+		},
+	}
+	cluster, err := c.ClusterCreate(cluster_req)
 	tests.Assert(t, err != nil)
 	tests.Assert(t, cluster == nil)
 
 	// Create cluster with bad password
 	c = NewClient(ts.URL, "admin", "badpassword")
 	tests.Assert(t, c != nil)
-	cluster, err = c.ClusterCreate()
+	cluster, err = c.ClusterCreate(cluster_req)
 	tests.Assert(t, err != nil)
 	tests.Assert(t, cluster == nil)
 
 	// Create cluster correctly
 	c = NewClient(ts.URL, "admin", TEST_ADMIN_KEY)
 	tests.Assert(t, c != nil)
-	cluster, err = c.ClusterCreate()
+	cluster, err = c.ClusterCreate(cluster_req)
 	tests.Assert(t, err == nil)
 	tests.Assert(t, cluster.Id != "")
 	tests.Assert(t, len(cluster.Nodes) == 0)
@@ -253,10 +273,26 @@ func TestClientCluster(t *testing.T) {
 	tests.Assert(t, err != nil)
 	tests.Assert(t, info == nil)
 
-	// Get information about the client
+	// Get information about the cluster
 	info, err = c.ClusterInfo(cluster.Id)
 	tests.Assert(t, err == nil)
 	tests.Assert(t, reflect.DeepEqual(info, cluster))
+
+	// Set flags on the cluster
+	cluster_setflags_req := &api.ClusterSetFlagsRequest{
+		ClusterFlags: api.ClusterFlags{
+			File:  true,
+			Block: false,
+		},
+	}
+	err = c.ClusterSetFlags(cluster.Id, cluster_setflags_req)
+	tests.Assert(t, err == nil, err)
+
+	// Check flags result
+	info, err = c.ClusterInfo(cluster.Id)
+	tests.Assert(t, err == nil)
+	tests.Assert(t, info.File == true)
+	tests.Assert(t, info.Block == false)
 
 	// Get a list of clusters
 	list, err := c.ClusterList()
@@ -288,7 +324,13 @@ func TestClientNode(t *testing.T) {
 	// Create cluster
 	c := NewClient(ts.URL, "admin", TEST_ADMIN_KEY)
 	tests.Assert(t, c != nil)
-	cluster, err := c.ClusterCreate()
+	cluster_req := &api.ClusterCreateRequest{
+		ClusterFlags: api.ClusterFlags{
+			Block: true,
+			File:  true,
+		},
+	}
+	cluster, err := c.ClusterCreate(cluster_req)
 	tests.Assert(t, err == nil)
 	tests.Assert(t, cluster.Id != "")
 	tests.Assert(t, len(cluster.Nodes) == 0)
@@ -374,7 +416,13 @@ func TestClientDevice(t *testing.T) {
 	// Create cluster
 	c := NewClient(ts.URL, "admin", TEST_ADMIN_KEY)
 	tests.Assert(t, c != nil)
-	cluster, err := c.ClusterCreate()
+	cluster_req := &api.ClusterCreateRequest{
+		ClusterFlags: api.ClusterFlags{
+			Block: true,
+			File:  true,
+		},
+	}
+	cluster, err := c.ClusterCreate(cluster_req)
 	tests.Assert(t, err == nil)
 
 	// Create node request packet
@@ -390,7 +438,7 @@ func TestClientDevice(t *testing.T) {
 
 	// Create a device request
 	deviceReq := &api.DeviceAddRequest{}
-	deviceReq.Name = "sda"
+	deviceReq.Name = "/sda"
 	deviceReq.NodeId = node.Id
 
 	// Create device
@@ -420,7 +468,7 @@ func TestClientDevice(t *testing.T) {
 	err = c.DeviceState(deviceId, &api.StateRequest{
 		State: api.EntryStateOffline,
 	})
-	tests.Assert(t, err == nil)
+	tests.Assert(t, err == nil, err)
 	deviceInfo, err = c.DeviceInfo(deviceId)
 	tests.Assert(t, err == nil)
 	tests.Assert(t, deviceInfo.State == api.EntryStateOffline)
@@ -480,7 +528,13 @@ func TestClientVolume(t *testing.T) {
 	// Create cluster
 	c := NewClient(ts.URL, "admin", TEST_ADMIN_KEY)
 	tests.Assert(t, c != nil)
-	cluster, err := c.ClusterCreate()
+	cluster_req := &api.ClusterCreateRequest{
+		ClusterFlags: api.ClusterFlags{
+			Block: true,
+			File:  true,
+		},
+	}
+	cluster, err := c.ClusterCreate(cluster_req)
 	tests.Assert(t, err == nil)
 
 	// Create node request packet
@@ -498,12 +552,13 @@ func TestClientVolume(t *testing.T) {
 		// Create a device request
 		sg := utils.NewStatusGroup()
 		for i := 0; i < 50; i++ {
+			b := utils.GenUUID()
 			sg.Add(1)
 			go func() {
 				defer sg.Done()
 
 				deviceReq := &api.DeviceAddRequest{}
-				deviceReq.Name = "sd" + utils.GenUUID()[:8]
+				deviceReq.Name = "/sd" + b[:4] + b[24:]
 				deviceReq.NodeId = node.Id
 
 				// Create device
@@ -512,7 +567,8 @@ func TestClientVolume(t *testing.T) {
 
 			}()
 		}
-		tests.Assert(t, sg.Result() == nil)
+		r := sg.Result()
+		tests.Assert(t, r == nil, r)
 	}
 
 	// Get list of volumes

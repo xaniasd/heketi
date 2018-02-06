@@ -14,29 +14,19 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"sync"
 
+	"github.com/heketi/heketi/executors/cmdexec"
 	"github.com/heketi/heketi/pkg/utils"
 	"github.com/heketi/heketi/pkg/utils/ssh"
 	"github.com/lpabon/godbc"
 )
-
-type RemoteCommandTransport interface {
-	RemoteCommandExecute(host string, commands []string, timeoutMinutes int) ([]string, error)
-	RebalanceOnExpansion() bool
-	SnapShotLimit() int
-}
 
 type Ssher interface {
 	ConnectAndExec(host string, commands []string, timeoutMinutes int, useSudo bool) ([]string, error)
 }
 
 type SshExecutor struct {
-	// "Public"
-	Throttlemap    map[string]chan bool
-	Lock           sync.Mutex
-	RemoteExecutor RemoteCommandTransport
-	Fstab          string
+	cmdexec.CmdExecutor
 
 	// Private
 	private_keyfile string
@@ -47,7 +37,6 @@ type SshExecutor struct {
 }
 
 var (
-	logger           = utils.NewLogger("[sshexec]", utils.LEVEL_DEBUG)
 	ErrSshPrivateKey = errors.New("Unable to read private key file")
 	sshNew           = func(logger *utils.Logger, user string, file string) (Ssher, error) {
 		s := ssh.NewSshExecWithKeyFile(logger, user, file)
@@ -128,14 +117,14 @@ func NewSshExecutor(config *SshConfig) (*SshExecutor, error) {
 
 	// Show experimental settings
 	if s.config.RebalanceOnExpansion {
-		logger.Warning("Rebalance on volume expansion has been enabled.  This is an EXPERIMENTAL feature")
+		s.Logger().Warning("Rebalance on volume expansion has been enabled.  This is an EXPERIMENTAL feature")
 	}
 
 	// Setup key
 	var err error
-	s.exec, err = sshNew(logger, s.user, s.private_keyfile)
+	s.exec, err = sshNew(s.Logger(), s.user, s.private_keyfile)
 	if err != nil {
-		logger.Err(err)
+		s.Logger().Err(err)
 		return nil, err
 	}
 
@@ -149,48 +138,6 @@ func NewSshExecutor(config *SshConfig) (*SshExecutor, error) {
 	return s, nil
 }
 
-func (s *SshExecutor) SetLogLevel(level string) {
-	switch level {
-	case "none":
-		logger.SetLevel(utils.LEVEL_NOLOG)
-	case "critical":
-		logger.SetLevel(utils.LEVEL_CRITICAL)
-	case "error":
-		logger.SetLevel(utils.LEVEL_ERROR)
-	case "warning":
-		logger.SetLevel(utils.LEVEL_WARNING)
-	case "info":
-		logger.SetLevel(utils.LEVEL_INFO)
-	case "debug":
-		logger.SetLevel(utils.LEVEL_DEBUG)
-	}
-}
-
-func (s *SshExecutor) AccessConnection(host string) {
-
-	var (
-		c  chan bool
-		ok bool
-	)
-
-	s.Lock.Lock()
-	if c, ok = s.Throttlemap[host]; !ok {
-		c = make(chan bool, 1)
-		s.Throttlemap[host] = c
-	}
-	s.Lock.Unlock()
-
-	c <- true
-}
-
-func (s *SshExecutor) FreeConnection(host string) {
-	s.Lock.Lock()
-	c := s.Throttlemap[host]
-	s.Lock.Unlock()
-
-	<-c
-}
-
 func (s *SshExecutor) RemoteCommandExecute(host string,
 	commands []string,
 	timeoutMinutes int) ([]string, error) {
@@ -201,18 +148,6 @@ func (s *SshExecutor) RemoteCommandExecute(host string,
 
 	// Execute
 	return s.exec.ConnectAndExec(host+":"+s.port, commands, timeoutMinutes, s.config.Sudo)
-}
-
-func (s *SshExecutor) vgName(vgId string) string {
-	return "vg_" + vgId
-}
-
-func (s *SshExecutor) brickName(brickId string) string {
-	return "brick_" + brickId
-}
-
-func (s *SshExecutor) tpName(brickId string) string {
-	return "tp_" + brickId
 }
 
 func (s *SshExecutor) RebalanceOnExpansion() bool {

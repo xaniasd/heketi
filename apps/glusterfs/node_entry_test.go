@@ -12,7 +12,6 @@ package glusterfs
 import (
 	"os"
 	"reflect"
-	"sort"
 	"testing"
 
 	"github.com/boltdb/bolt"
@@ -22,11 +21,12 @@ import (
 )
 
 func createSampleNodeEntry() *NodeEntry {
+	g := utils.GenUUID()
 	req := &api.NodeAddRequest{
 		ClusterId: "123",
 		Hostnames: api.HostAddresses{
-			Manage:  []string{"manage" + utils.GenUUID()[:8]},
-			Storage: []string{"storage" + utils.GenUUID()[:8]},
+			Manage:  []string{"manage" + g[:4] + g[24:]},
+			Storage: []string{"storage" + g[:4] + g[24:]},
 		},
 		Zone: 99,
 	}
@@ -489,10 +489,6 @@ func TestNodeSetStateFailed(t *testing.T) {
 	app := NewTestApp(tmpfile)
 	defer app.Close()
 
-	// Create allocator
-	mockAllocator := NewMockAllocator(app.db)
-	app.allocator = mockAllocator
-
 	// Create cluster entry
 	c := NewClusterEntry()
 	c.Info.Id = "cluster"
@@ -504,17 +500,17 @@ func TestNodeSetStateFailed(t *testing.T) {
 
 	// Initialize node
 	n.Info.Id = "node"
-	n.Info.ClusterId = "cluster"
-	n.Devices = sort.StringSlice{"d1"}
+	n.Info.ClusterId = c.Info.Id
+
+	c.NodeAdd(n.Info.Id)
 
 	// Create device entry
 	d := NewDeviceEntry()
 	d.Info.Id = "d1"
 	d.Info.Name = "/d1"
-	d.NodeId = "node"
+	d.NodeId = n.Info.Id
 
-	// Add to allocator
-	mockAllocator.AddDevice(c, n, d)
+	n.DeviceAdd(d.Info.Id)
 
 	// Save in db
 	app.db.Update(func(tx *bolt.Tx) error {
@@ -531,39 +527,41 @@ func TestNodeSetStateFailed(t *testing.T) {
 	})
 
 	// Check ring
-	tests.Assert(t, len(mockAllocator.clustermap[c.Info.Id]) == 1)
-	tests.Assert(t, mockAllocator.clustermap[c.Info.Id][0] == d.Info.Id)
+	tests.Assert(t, app.Allocator().HasDevice(c.Info.Id, n.Info.Zone,
+		n.Info.Id, d.Info.Id))
 
 	// Set failed
-	err := n.SetState(app.db, app.executor, mockAllocator, api.EntryStateFailed)
+	err := n.SetState(app.db, app.executor, app.Allocator(), api.EntryStateFailed)
 	tests.Assert(t, n.State == api.EntryStateOnline)
 	tests.Assert(t, err != nil)
 
 	// Set offline
-	err = n.SetState(app.db, app.executor, mockAllocator, api.EntryStateOffline)
+	err = n.SetState(app.db, app.executor, app.Allocator(), api.EntryStateOffline)
 	tests.Assert(t, n.State == api.EntryStateOffline)
 	tests.Assert(t, err == nil)
 
 	// Check it was removed from ring
-	tests.Assert(t, len(mockAllocator.clustermap[c.Info.Id]) == 0)
+	tests.Assert(t, !app.Allocator().HasDevice(c.Info.Id, n.Info.Zone,
+		n.Info.Id, d.Info.Id))
 
 	// Set failed
-	err = n.SetState(app.db, app.executor, mockAllocator, api.EntryStateFailed)
+	err = n.SetState(app.db, app.executor, app.Allocator(), api.EntryStateFailed)
 	tests.Assert(t, n.State == api.EntryStateFailed)
 	tests.Assert(t, err == nil)
 
 	// Set offline
-	err = n.SetState(app.db, app.executor, mockAllocator, api.EntryStateOffline)
+	err = n.SetState(app.db, app.executor, app.Allocator(), api.EntryStateOffline)
 	tests.Assert(t, n.State == api.EntryStateFailed)
 	tests.Assert(t, err != nil)
-	tests.Assert(t, len(mockAllocator.clustermap[c.Info.Id]) == 0)
+	tests.Assert(t, !app.Allocator().HasDevice(c.Info.Id, n.Info.Zone,
+		n.Info.Id, d.Info.Id))
 
 	// Set online
-	err = n.SetState(app.db, app.executor, mockAllocator, api.EntryStateOnline)
+	err = n.SetState(app.db, app.executor, app.Allocator(), api.EntryStateOnline)
 	tests.Assert(t, n.State == api.EntryStateFailed)
 	tests.Assert(t, err != nil)
-	tests.Assert(t, len(mockAllocator.clustermap[c.Info.Id]) == 0)
-
+	tests.Assert(t, !app.Allocator().HasDevice(c.Info.Id, n.Info.Zone,
+		n.Info.Id, d.Info.Id))
 }
 
 func TestNodeSetStateOfflineOnline(t *testing.T) {
@@ -574,10 +572,6 @@ func TestNodeSetStateOfflineOnline(t *testing.T) {
 	app := NewTestApp(tmpfile)
 	defer app.Close()
 
-	// Create allocator
-	mockAllocator := NewMockAllocator(app.db)
-	app.allocator = mockAllocator
-
 	// Create cluster entry
 	c := NewClusterEntry()
 	c.Info.Id = "cluster"
@@ -589,17 +583,17 @@ func TestNodeSetStateOfflineOnline(t *testing.T) {
 
 	// Initialize node
 	n.Info.Id = "node"
-	n.Info.ClusterId = "cluster"
-	n.Devices = sort.StringSlice{"d1"}
+	n.Info.ClusterId = c.Info.Id
+
+	c.NodeAdd(n.Info.Id)
 
 	// Create device entry
 	d := NewDeviceEntry()
 	d.Info.Id = "d1"
 	d.Info.Name = "/d1"
-	d.NodeId = "node"
+	d.NodeId = n.Info.Id
 
-	// Add to allocator
-	mockAllocator.AddDevice(c, n, d)
+	n.DeviceAdd(d.Info.Id)
 
 	// Save in db
 	app.db.Update(func(tx *bolt.Tx) error {
@@ -615,28 +609,29 @@ func TestNodeSetStateOfflineOnline(t *testing.T) {
 	})
 
 	// Check ring
-	tests.Assert(t, len(mockAllocator.clustermap[c.Info.Id]) == 1)
-	tests.Assert(t, mockAllocator.clustermap[c.Info.Id][0] == d.Info.Id)
+	tests.Assert(t, app.Allocator().HasDevice(c.Info.Id, n.Info.Zone,
+		n.Info.Id, d.Info.Id))
 
 	// Set offline
-	err := n.SetState(app.db, app.executor, mockAllocator, api.EntryStateOffline)
+	err := n.SetState(app.db, app.executor, app.Allocator(), api.EntryStateOffline)
 	tests.Assert(t, n.State == api.EntryStateOffline)
 	tests.Assert(t, err == nil)
 
 	// Check it was removed from ring
-	tests.Assert(t, len(mockAllocator.clustermap[c.Info.Id]) == 0)
+	tests.Assert(t, !app.Allocator().HasDevice(c.Info.Id, n.Info.Zone,
+		n.Info.Id, d.Info.Id))
 
 	// Set offline again
-	err = n.SetState(app.db, app.executor, mockAllocator, api.EntryStateOffline)
+	err = n.SetState(app.db, app.executor, app.Allocator(), api.EntryStateOffline)
 	tests.Assert(t, n.State == api.EntryStateOffline)
 	tests.Assert(t, err == nil)
 
 	// Set online
-	err = n.SetState(app.db, app.executor, mockAllocator, api.EntryStateOnline)
+	err = n.SetState(app.db, app.executor, app.Allocator(), api.EntryStateOnline)
 	tests.Assert(t, n.State == api.EntryStateOnline)
 	tests.Assert(t, err == nil)
-	tests.Assert(t, len(mockAllocator.clustermap[c.Info.Id]) == 1)
-	tests.Assert(t, mockAllocator.clustermap[c.Info.Id][0] == d.Info.Id)
+	tests.Assert(t, app.Allocator().HasDevice(c.Info.Id, n.Info.Zone,
+		n.Info.Id, d.Info.Id))
 }
 
 func TestGetVerifiedManageHostname(t *testing.T) {

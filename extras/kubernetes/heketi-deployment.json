@@ -13,7 +13,6 @@
         }
       },
       "data": {
-        "heketi.db": ""
       },
       "type": "Opaque"
     },
@@ -96,13 +95,17 @@
                   }
                 ],
                 "volumeMounts": [
-                    {
-                      "mountPath": "/backupdb",
-                      "name": "heketi-db-secret"
-                    },
+                  {
+                    "mountPath": "/backupdb",
+                    "name": "heketi-db-secret"
+                  },
                   {
                     "name": "db",
                     "mountPath": "/var/lib/heketi"
+                  },
+                  {
+                    "name": "config",
+                    "mountPath": "/etc/heketi"
                   }
                 ],
                 "readinessProbe": {
@@ -125,12 +128,22 @@
             ],
             "volumes": [
               {
-                "name": "db"
+                "name": "db",
+                "glusterfs": {
+                  "endpoints": "heketi-storage-endpoints",
+                  "path": "heketidbstorage"
+                }
               },
               {
                 "name": "heketi-db-secret",
                 "secret": {
                   "secretName": "heketi-db-backup"
+                }
+              },
+              {
+                "name": "config",
+                "secret": {
+                  "secretName": "heketi-config-secret"
                 }
               }
             ]

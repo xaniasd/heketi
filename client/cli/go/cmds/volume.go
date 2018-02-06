@@ -38,6 +38,7 @@ var (
 	kubePvEndpoint       string
 	kubePv               bool
 	glusterVolumeOptions string
+	block                bool
 )
 
 func init() {
@@ -50,7 +51,7 @@ func init() {
 	initGeoRepCommand()
 
 	volumeCreateCommand.Flags().IntVar(&size, "size", -1,
-		"\n\tSize of volume in GB")
+		"\n\tSize of volume in GiB")
 	volumeCreateCommand.Flags().Int64Var(&gid, "gid", 0,
 		"\n\tOptional: Initialize volume with the specified group id")
 	volumeCreateCommand.Flags().StringVar(&volname, "name", "",
@@ -92,9 +93,12 @@ func init() {
 	volumeCreateCommand.Flags().StringVar(&kubePvEndpoint, "persistent-volume-endpoint", "",
 		"\n\tOptional: Endpoint name for the persistent volume")
 	volumeExpandCommand.Flags().IntVar(&expandSize, "expand-size", -1,
-		"\n\tAmount in GB to add to the volume")
+		"\n\tAmount in GiB to add to the volume")
 	volumeExpandCommand.Flags().StringVar(&id, "volume", "",
 		"\n\tId of volume to expand")
+	volumeCreateCommand.Flags().BoolVar(&block, "block", false,
+		"\n\tOptional: Create a block-hosting volume. Intended to host"+
+			"\n\tloopback files to be exported as block devices.")
 	volumeCreateCommand.SilenceUsage = true
 	volumeDeleteCommand.SilenceUsage = true
 	volumeExpandCommand.SilenceUsage = true
@@ -112,27 +116,27 @@ var volumeCreateCommand = &cobra.Command{
 	Use:   "create",
 	Short: "Create a GlusterFS volume",
 	Long:  "Create a GlusterFS volume",
-	Example: `  * Create a 100GB replica 3 volume:
+	Example: `  * Create a 100GiB replica 3 volume:
       $ heketi-cli volume create --size=100
 
-  * Create a 100GB replica 3 volume specifying two specific clusters:
+  * Create a 100GiB replica 3 volume specifying two specific clusters:
       $ heketi-cli volume create --size=100 \
         --clusters=0995098e1284ddccb46c7752d142c832,60d46d518074b13a04ce1022c8c7193c
 
-  * Create a 100GB replica 2 volume with 50GB of snapshot storage:
+  * Create a 100GiB replica 2 volume with 50GiB of snapshot storage:
       $ heketi-cli volume create --size=100 --snapshot-factor=1.5 --replica=2
 
-  * Create a 100GB distributed volume
+  * Create a 100GiB distributed volume
       $ heketi-cli volume create --size=100 --durability=none
 
-  * Create a 100GB erasure coded 4+2 volume with 25GB snapshot storage:
+  * Create a 100GiB erasure coded 4+2 volume with 25GiB snapshot storage:
       $ heketi-cli volume create --size=100 --durability=disperse --snapshot-factor=1.25
 
-  * Create a 100GB erasure coded 8+3 volume with 25GB snapshot storage:
+  * Create a 100GiB erasure coded 8+3 volume with 25GiB snapshot storage:
       $ heketi-cli volume create --size=100 --durability=disperse --snapshot-factor=1.25 \
         --disperse-data=8 --redundancy=3
 
-  * Create a 100GB distributed volume which supports performance related volume options.
+  * Create a 100GiB distributed volume which supports performance related volume options.
       $ heketi-cli volume create --size=100 --durability=none --gluster-volume-options="performance.rda-cache-limit 10MB","performance.nl-cache-positive-entry no"
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -154,6 +158,7 @@ var volumeCreateCommand = &cobra.Command{
 		req.Durability.Replicate.Replica = replica
 		req.Durability.Disperse.Data = disperseData
 		req.Durability.Disperse.Redundancy = redundancy
+		req.Block = block
 
 		// Check clusters
 		if clusters != "" {
@@ -262,7 +267,7 @@ var volumeExpandCommand = &cobra.Command{
 	Use:   "expand",
 	Short: "Expand a volume",
 	Long:  "Expand a volume",
-	Example: `  * Add 10GB to a volume
+	Example: `  * Add 10GiB to a volume
     $ heketi-cli volume expand --volume=60d46d518074b13a04ce1022c8c7193c --expand-size=10
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -367,10 +372,15 @@ var volumeListCommand = &cobra.Command{
 					return err
 				}
 
-				fmt.Fprintf(stdout, "Id:%-35v Cluster:%-35v Name:%v\n",
+				blockstr := ""
+				if volume.Block {
+					blockstr = " [block]"
+				}
+				fmt.Fprintf(stdout, "Id:%-35v Cluster:%-35v Name:%v%v\n",
 					id,
 					volume.Cluster,
-					volume.Name)
+					volume.Name,
+					blockstr)
 			}
 		}
 

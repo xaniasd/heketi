@@ -17,6 +17,7 @@ import (
 
 	"github.com/boltdb/bolt"
 	"github.com/heketi/heketi/executors"
+	wdb "github.com/heketi/heketi/pkg/db"
 	"github.com/heketi/heketi/pkg/glusterfs/api"
 	"github.com/heketi/heketi/pkg/utils"
 	"github.com/lpabon/godbc"
@@ -171,39 +172,7 @@ func (d *DeviceEntry) Delete(tx *bolt.Tx) error {
 	return EntryDelete(tx, d, d.Info.Id)
 }
 
-func (d *DeviceEntry) removeDeviceFromRing(tx *bolt.Tx,
-	a Allocator) error {
-
-	node, err := NewNodeEntryFromId(tx, d.NodeId)
-	if err != nil {
-		return err
-	}
-
-	cluster, err := NewClusterEntryFromId(tx, node.Info.ClusterId)
-	if err != nil {
-		return err
-	}
-
-	return a.RemoveDevice(cluster, node, d)
-}
-
-func (d *DeviceEntry) addDeviceToRing(tx *bolt.Tx,
-	a Allocator) error {
-
-	node, err := NewNodeEntryFromId(tx, d.NodeId)
-	if err != nil {
-		return err
-	}
-
-	cluster, err := NewClusterEntryFromId(tx, node.Info.ClusterId)
-	if err != nil {
-		return err
-	}
-
-	return a.AddDevice(cluster, node, d)
-}
-
-func (d *DeviceEntry) SetState(db *bolt.DB,
+func (d *DeviceEntry) SetState(db wdb.DB,
 	e executors.Executor,
 	a Allocator,
 	s api.EntryState) error {
@@ -230,17 +199,11 @@ func (d *DeviceEntry) SetState(db *bolt.DB,
 		case api.EntryStateOnline:
 			return nil
 		case api.EntryStateOffline:
-			// Remove disk from Ring
 			err := db.Update(func(tx *bolt.Tx) error {
-				err := d.removeDeviceFromRing(tx, a)
-				if err != nil {
-					return err
-				}
-
 				// Save state
 				d.State = s
 				// Save new state
-				err = d.Save(tx)
+				err := d.Save(tx)
 				if err != nil {
 					return err
 				}
@@ -263,12 +226,8 @@ func (d *DeviceEntry) SetState(db *bolt.DB,
 		case api.EntryStateOnline:
 			// Add disk back
 			err := db.Update(func(tx *bolt.Tx) error {
-				err := d.addDeviceToRing(tx, a)
-				if err != nil {
-					return err
-				}
 				d.State = s
-				err = d.Save(tx)
+				err := d.Save(tx)
 				if err != nil {
 					return err
 				}
@@ -381,7 +340,7 @@ func (d *DeviceEntry) SetExtentSize(amount uint64) {
 
 // Allocates a new brick if the space is available.  It will automatically reserve
 // the storage amount required from the device's used storage, but it will not add
-// the brick id to the brick list.  The caller is responsabile for adding the brick
+// the brick id to the brick list.  The caller is responsible for adding the brick
 // id to the list.
 func (d *DeviceEntry) NewBrickEntry(amount uint64, snapFactor float64, gid int64, volumeid string) *BrickEntry {
 
@@ -435,7 +394,7 @@ func (d *DeviceEntry) poolMetadataSize(tpsize uint64) uint64 {
 }
 
 // Moves all the bricks from the device to one or more other devices
-func (d *DeviceEntry) Remove(db *bolt.DB,
+func (d *DeviceEntry) Remove(db wdb.DB,
 	executor executors.Executor,
 	allocator Allocator) (e error) {
 

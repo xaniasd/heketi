@@ -35,6 +35,8 @@ type MockExecutor struct {
 	MockGeoReplicationVolumeStatus func(host string, volume string) (*executors.GeoReplicationStatus, error)
 	MockGeoReplicationStatus       func(host string) (*executors.GeoReplicationStatus, error)
 	MockHealInfo                   func(host string, volume string) (*executors.HealInfo, error)
+	MockBlockVolumeCreate          func(host string, blockVolume *executors.BlockVolumeRequest) (*executors.BlockVolumeInfo, error)
+	MockBlockVolumeDestroy         func(host string, blockHostingVolumeName string, blockVolumeName string) error
 }
 
 func NewMockExecutor() (*MockExecutor, error) {
@@ -139,6 +141,27 @@ func NewMockExecutor() (*MockExecutor, error) {
 		return nil, nil
 	}
 
+	m.MockBlockVolumeCreate = func(host string, blockVolume *executors.BlockVolumeRequest) (*executors.BlockVolumeInfo, error) {
+		var blockVolumeInfo executors.BlockVolumeInfo
+		blockVolumeInfo.BlockHosts = blockVolume.BlockHosts
+		blockVolumeInfo.GlusterNode = blockVolume.GlusterNode
+		blockVolumeInfo.GlusterVolumeName = blockVolume.GlusterVolumeName
+		blockVolumeInfo.Hacount = blockVolume.Hacount
+		blockVolumeInfo.Iqn = "fakeIQN"
+		if blockVolume.Auth {
+			blockVolumeInfo.Username = "heketi-user"
+			blockVolumeInfo.Password = "secret"
+		}
+		blockVolumeInfo.Name = blockVolume.Name
+		blockVolumeInfo.Size = blockVolume.Size
+
+		return &blockVolumeInfo, nil
+	}
+
+	m.MockBlockVolumeDestroy = func(host string, blockHostingVolumeName string, blockVolumeName string) error {
+		return nil
+	}
+
 	return m, nil
 }
 
@@ -228,4 +251,12 @@ func (m *MockExecutor) GeoReplicationVolumeStatus(host, volume string) (*executo
 
 func (m *MockExecutor) GeoReplicationStatus(host string) (*executors.GeoReplicationStatus, error) {
 	return m.MockGeoReplicationStatus(host)
+}
+
+func (m *MockExecutor) BlockVolumeCreate(host string, blockVolume *executors.BlockVolumeRequest) (*executors.BlockVolumeInfo, error) {
+	return m.MockBlockVolumeCreate(host, blockVolume)
+}
+
+func (m *MockExecutor) BlockVolumeDestroy(host string, blockHostingVolumeName string, blockVolumeName string) error {
+	return m.MockBlockVolumeDestroy(host, blockHostingVolumeName, blockVolumeName)
 }

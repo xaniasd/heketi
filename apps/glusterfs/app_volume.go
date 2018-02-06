@@ -34,6 +34,12 @@ func (a *App) VolumeCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "request unable to be parsed", 422)
 		return
 	}
+	err = msg.Validate()
+	if err != nil {
+		http.Error(w, "validation failed: "+err.Error(), http.StatusBadRequest)
+		logger.LogError("validation failed: " + err.Error())
+		return
+	}
 
 	switch {
 	case msg.Gid < 0:
@@ -144,7 +150,7 @@ func (a *App) VolumeCreate(w http.ResponseWriter, r *http.Request) {
 	a.asyncManager.AsyncHttpRedirectFunc(w, r, func() (string, error) {
 
 		logger.Info("Creating volume %v", vol.Info.Id)
-		err := vol.Create(a.db, a.executor, a.allocator)
+		err := vol.Create(a.db, a.executor, a.Allocator())
 		if err != nil {
 			logger.LogError("Failed to create volume: %v", err)
 			return "", err
@@ -245,8 +251,22 @@ func (a *App) VolumeDelete(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 
-		return nil
+		if !volume.Info.Block {
+			// further checks only needed for block-hosting volumes
+			return nil
+		}
 
+		if volume.Info.BlockInfo.BlockVolumes == nil {
+			return nil
+		}
+
+		if len(volume.Info.BlockInfo.BlockVolumes) == 0 {
+			return nil
+		}
+
+		err = logger.LogError("Cannot delete a block hosting volume containing block volumes")
+		http.Error(w, err.Error(), http.StatusConflict)
+		return err
 	})
 	if err != nil {
 		return
@@ -286,6 +306,12 @@ func (a *App) VolumeExpand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logger.Debug("Msg: %v", msg)
+	err = msg.Validate()
+	if err != nil {
+		http.Error(w, "validation failed: "+err.Error(), http.StatusBadRequest)
+		logger.LogError("validation failed: " + err.Error())
+		return
+	}
 
 	if msg.Size < 1 {
 		http.Error(w, "Invalid volume size", http.StatusBadRequest)
@@ -317,7 +343,7 @@ func (a *App) VolumeExpand(w http.ResponseWriter, r *http.Request) {
 	a.asyncManager.AsyncHttpRedirectFunc(w, r, func() (string, error) {
 
 		logger.Info("Expanding volume %v", volume.Info.Id)
-		err := volume.Expand(a.db, a.executor, a.allocator, msg.Size)
+		err := volume.Expand(a.db, a.executor, a.Allocator(), msg.Size)
 		if err != nil {
 			logger.LogError("Failed to expand volume %v", volume.Info.Id)
 			return "", err

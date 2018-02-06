@@ -10,8 +10,10 @@
 package glusterfs
 
 import (
-	"github.com/boltdb/bolt"
 	"sync"
+
+	"github.com/boltdb/bolt"
+	wdb "github.com/heketi/heketi/pkg/db"
 )
 
 // Simple allocator contains a map to rings of clusters
@@ -28,7 +30,7 @@ func NewSimpleAllocator() *SimpleAllocator {
 }
 
 // Create a new simple allocator and initialize it with data from the db
-func NewSimpleAllocatorFromDb(db *bolt.DB) *SimpleAllocator {
+func NewSimpleAllocatorFromDb(db wdb.RODB) *SimpleAllocator {
 
 	s := NewSimpleAllocator()
 
@@ -41,6 +43,11 @@ func NewSimpleAllocatorFromDb(db *bolt.DB) *SimpleAllocator {
 		for _, clusterId := range clusters {
 			cluster, err := NewClusterEntryFromId(tx, clusterId)
 			if err != nil {
+				return err
+			}
+
+			// Add Cluster to ring
+			if err = s.AddCluster(cluster.Info.Id); err != nil {
 				return err
 			}
 
@@ -89,15 +96,16 @@ func (s *SimpleAllocator) AddDevice(cluster *ClusterEntry,
 	node *NodeEntry,
 	device *DeviceEntry) error {
 
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	// Create a new cluster id if one is not available
 	clusterId := cluster.Info.Id
+
+	// Check the cluster id is in the map
 	if _, ok := s.rings[clusterId]; !ok {
-		s.rings[clusterId] = NewSimpleAllocatorRing()
+		logger.LogError("Unknown cluster id requested: %v", clusterId)
+		return ErrNotFound
 	}
 
+	s.lock.Lock()
+	defer s.lock.Unlock()
 	s.rings[clusterId].Add(&SimpleDevice{
 		zone:     node.Info.Zone,
 		nodeId:   node.Info.Id,
@@ -128,6 +136,24 @@ func (s *SimpleAllocator) RemoveDevice(cluster *ClusterEntry,
 		nodeId:   node.Info.Id,
 		deviceId: device.Info.Id,
 	})
+
+	return nil
+}
+
+// AddCluster adds an entry to the rings map. Must be called before AddDevice so
+// that the entry exists.
+func (s *SimpleAllocator) AddCluster(clusterId string) error {
+
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if _, ok := s.rings[clusterId]; ok {
+		logger.LogError("cluster id %s already exists", clusterId)
+		return ErrFound
+	}
+
+	// Add cluster to map
+	s.rings[clusterId] = NewSimpleAllocatorRing()
 
 	return nil
 }
@@ -203,4 +229,33 @@ func (s *SimpleAllocator) GetNodes(clusterId, brickId string) (<-chan string,
 	}()
 
 	return device, done, errc
+}
+
+func (s *SimpleAllocator) HasNode(clusterId string, zone int,
+	nodeId string) bool {
+
+	if _, ok := s.rings[clusterId]; !ok {
+		return false
+	}
+
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	ring := s.rings[clusterId]
+
+	return ring.HasNode(zone, nodeId)
+}
+func (s *SimpleAllocator) HasDevice(clusterId string, zone int,
+	nodeId, deviceId string) bool {
+
+	if _, ok := s.rings[clusterId]; !ok {
+		return false
+	}
+
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	ring := s.rings[clusterId]
+
+	return ring.HasDevice(zone, nodeId, deviceId)
 }

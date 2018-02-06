@@ -7,7 +7,7 @@
 // cases as published by the Free Software Foundation.
 //
 
-package sshexec
+package cmdexec
 
 import (
 	"errors"
@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/heketi/heketi/executors"
+	"github.com/heketi/heketi/pkg/utils"
 )
 
 const (
@@ -30,12 +31,12 @@ const (
 // https://access.redhat.com/documentation/en-US/Red_Hat_Storage/3.1/html/Administration_Guide/Brick_Configuration.html
 //
 
-func (s *SshExecutor) DeviceSetup(host, device, vgid string) (d *executors.DeviceInfo, e error) {
+func (s *CmdExecutor) DeviceSetup(host, device, vgid string) (d *executors.DeviceInfo, e error) {
 
 	// Setup commands
 	commands := []string{
-		fmt.Sprintf("pvcreate --metadatasize=128M --dataalignment=256K %v", device),
-		fmt.Sprintf("vgcreate %v %v", s.vgName(vgid), device),
+		fmt.Sprintf("pvcreate --metadatasize=128M --dataalignment=256K '%v'", device),
+		fmt.Sprintf("vgcreate %v %v", utils.VgIdToName(vgid), device),
 	}
 
 	// Execute command
@@ -54,7 +55,7 @@ func (s *SshExecutor) DeviceSetup(host, device, vgid string) (d *executors.Devic
 	return s.GetDeviceInfo(host, device, vgid)
 }
 
-func (s *SshExecutor) GetDeviceInfo(host, device, vgid string) (d *executors.DeviceInfo, e error) {
+func (s *CmdExecutor) GetDeviceInfo(host, device, vgid string) (d *executors.DeviceInfo, e error) {
 	// Vg info
 	d = &executors.DeviceInfo{}
 	err := s.getVgSizeFromNode(d, host, device, vgid)
@@ -64,23 +65,24 @@ func (s *SshExecutor) GetDeviceInfo(host, device, vgid string) (d *executors.Dev
 	return d, nil
 }
 
-func (s *SshExecutor) DeviceTeardown(host, device, vgid string) error {
+func (s *CmdExecutor) DeviceTeardown(host, device, vgid string) error {
 
 	// Setup commands
 	commands := []string{
-		fmt.Sprintf("vgremove %v", s.vgName(vgid)),
-		fmt.Sprintf("pvremove %v", device),
+		fmt.Sprintf("vgremove %v", utils.VgIdToName(vgid)),
+		fmt.Sprintf("pvremove '%v'", device),
 	}
 
 	// Execute command
 	_, err := s.RemoteExecutor.RemoteCommandExecute(host, commands, 5)
 	if err != nil {
-		logger.LogError("Error while deleting device %v on %v with id %v",
-			device, host, vgid)
+		logger.LogError("Error while deleting device %v with id %v on host %v: %v",
+			device, vgid, host, err)
 	}
 
+	pdir := utils.BrickMountPointParent(vgid)
 	commands = []string{
-		fmt.Sprintf("ls %v/%v", rootMountPoint, s.vgName(vgid)),
+		fmt.Sprintf("ls %v", pdir),
 	}
 	_, err = s.RemoteExecutor.RemoteCommandExecute(host, commands, 5)
 	if err != nil {
@@ -88,7 +90,7 @@ func (s *SshExecutor) DeviceTeardown(host, device, vgid string) error {
 	}
 
 	commands = []string{
-		fmt.Sprintf("rmdir %v/%v", rootMountPoint, s.vgName(vgid)),
+		fmt.Sprintf("rmdir %v", pdir),
 	}
 
 	_, err = s.RemoteExecutor.RemoteCommandExecute(host, commands, 5)
@@ -100,13 +102,13 @@ func (s *SshExecutor) DeviceTeardown(host, device, vgid string) error {
 	return nil
 }
 
-func (s *SshExecutor) getVgSizeFromNode(
+func (s *CmdExecutor) getVgSizeFromNode(
 	d *executors.DeviceInfo,
 	host, device, vgid string) error {
 
 	// Setup command
 	commands := []string{
-		fmt.Sprintf("vgdisplay -c %v", s.vgName(vgid)),
+		fmt.Sprintf("vgdisplay -c %v", utils.VgIdToName(vgid)),
 	}
 
 	// Execute command

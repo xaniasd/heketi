@@ -10,8 +10,10 @@
 package glusterfs
 
 import (
+	"errors"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -26,12 +28,15 @@ import (
 )
 
 const (
-	ASYNC_ROUTE           = "/queue"
-	BOLTDB_BUCKET_CLUSTER = "CLUSTER"
-	BOLTDB_BUCKET_NODE    = "NODE"
-	BOLTDB_BUCKET_VOLUME  = "VOLUME"
-	BOLTDB_BUCKET_DEVICE  = "DEVICE"
-	BOLTDB_BUCKET_BRICK   = "BRICK"
+	ASYNC_ROUTE                    = "/queue"
+	BOLTDB_BUCKET_CLUSTER          = "CLUSTER"
+	BOLTDB_BUCKET_NODE             = "NODE"
+	BOLTDB_BUCKET_VOLUME           = "VOLUME"
+	BOLTDB_BUCKET_DEVICE           = "DEVICE"
+	BOLTDB_BUCKET_BRICK            = "BRICK"
+	BOLTDB_BUCKET_BLOCKVOLUME      = "BLOCKVOLUME"
+	BOLTDB_BUCKET_DBATTRIBUTE      = "DBATTRIBUTE"
+	DB_CLUSTER_HAS_FILE_BLOCK_FLAG = "DB_CLUSTER_HAS_FILE_BLOCK_FLAG"
 )
 
 var (
@@ -44,7 +49,7 @@ type App struct {
 	db           *bolt.DB
 	dbReadOnly   bool
 	executor     executors.Executor
-	allocator    Allocator
+	_allocator   Allocator
 	conf         *GlusterFSConfig
 
 	// For testing only.  Keep access to the object
@@ -95,7 +100,7 @@ func NewApp(configIo io.Reader) *App {
 	// Setup BoltDB database
 	app.db, err = bolt.Open(dbfilename, 0600, &bolt.Options{Timeout: 3 * time.Second})
 	if err != nil {
-		logger.Warning("Unable to open database.  Retrying using read only mode")
+		logger.LogError("Unable to open database: %v. Retrying using read only mode", err)
 
 		// Try opening as read-only
 		app.db, err = bolt.Open(dbfilename, 0666, &bolt.Options{
@@ -143,6 +148,18 @@ func NewApp(configIo io.Reader) *App {
 				return err
 			}
 
+			_, err = tx.CreateBucketIfNotExists([]byte(BOLTDB_BUCKET_BLOCKVOLUME))
+			if err != nil {
+				logger.LogError("Unable to create blockvolume bucket in DB")
+				return err
+			}
+
+			_, err = tx.CreateBucketIfNotExists([]byte(BOLTDB_BUCKET_DBATTRIBUTE))
+			if err != nil {
+				logger.LogError("Unable to create dbattribute bucket in DB")
+				return err
+			}
+
 			// Handle Upgrade Changes
 			err = app.Upgrade(tx)
 			if err != nil {
@@ -159,20 +176,14 @@ func NewApp(configIo io.Reader) *App {
 		}
 	}
 
+	// Set values mentioned in environmental variable
+	app.setFromEnvironmentalVariable()
+
 	// Set advanced settings
 	app.setAdvSettings()
 
-	// Setup allocator
-	switch {
-	case app.conf.Allocator == "mock":
-		app.allocator = NewMockAllocator(app.db)
-	case app.conf.Allocator == "simple" || app.conf.Allocator == "":
-		app.conf.Allocator = "simple"
-		app.allocator = NewSimpleAllocatorFromDb(app.db)
-	default:
-		return nil
-	}
-	logger.Info("Loaded %v allocator", app.conf.Allocator)
+	// Set block settings
+	app.setBlockSettings()
 
 	// Show application has loaded
 	logger.Info("GlusterFS Application Loaded")
@@ -233,6 +244,25 @@ func (a *App) Upgrade(tx *bolt.Tx) error {
 	return nil
 }
 
+func (a *App) setFromEnvironmentalVariable() {
+	var err error
+	env := os.Getenv("HEKETI_AUTO_CREATE_BLOCK_HOSTING_VOLUME")
+	if "" != env {
+		a.conf.CreateBlockHostingVolumes, err = strconv.ParseBool(env)
+		if err != nil {
+			logger.LogError("Error: Parse bool in Create Block Hosting Volumes: %v", err)
+		}
+	}
+
+	env = os.Getenv("HEKETI_BLOCK_HOSTING_VOLUME_SIZE")
+	if "" != env {
+		a.conf.BlockHostingVolumeSize, err = strconv.Atoi(env)
+		if err != nil {
+			logger.LogError("Error: Atoi in Block Hosting Volume Size: %v", err)
+		}
+	}
+}
+
 func (a *App) setAdvSettings() {
 	if a.conf.BrickMaxNum != 0 {
 		logger.Info("Adv: Max bricks per volume set to %v", a.conf.BrickMaxNum)
@@ -256,6 +286,21 @@ func (a *App) setAdvSettings() {
 	}
 }
 
+func (a *App) setBlockSettings() {
+	if a.conf.CreateBlockHostingVolumes != false {
+		logger.Info("Block: Auto Create Block Hosting Volume set to %v", a.conf.CreateBlockHostingVolumes)
+
+		// switch to auto creation of block hosting volumes
+		CreateBlockHostingVolumes = a.conf.CreateBlockHostingVolumes
+	}
+	if a.conf.BlockHostingVolumeSize > 0 {
+		logger.Info("Block: New Block Hosting Volume size %v GB", a.conf.BlockHostingVolumeSize)
+
+		// Should be in GB as this is input for block hosting volume create
+		BlockHostingVolumeSize = a.conf.BlockHostingVolumeSize
+	}
+}
+
 // Register Routes
 func (a *App) SetRoutes(router *mux.Router) error {
 
@@ -274,6 +319,11 @@ func (a *App) SetRoutes(router *mux.Router) error {
 			Method:      "POST",
 			Pattern:     "/clusters",
 			HandlerFunc: a.ClusterCreate},
+		rest.Route{
+			Name:        "ClusterSetFlags",
+			Method:      "POST",
+			Pattern:     "/clusters/{id:[A-Fa-f0-9]+}/flags",
+			HandlerFunc: a.ClusterSetFlags},
 		rest.Route{
 			Name:        "ClusterInfo",
 			Method:      "GET",
@@ -381,12 +431,42 @@ func (a *App) SetRoutes(router *mux.Router) error {
 			Method:      "POST",
 			Pattern:     "/volumes/{id:[A-Fa-f0-9]+}/georeplication",
 			HandlerFunc: a.GeoReplicationPostHandler},
+
+		// BlockVolumes
+		rest.Route{
+			Name:        "BlockVolumeCreate",
+			Method:      "POST",
+			Pattern:     "/blockvolumes",
+			HandlerFunc: a.BlockVolumeCreate},
+		rest.Route{
+			Name:        "BlockVolumeInfo",
+			Method:      "GET",
+			Pattern:     "/blockvolumes/{id:[A-Fa-f0-9]+}",
+			HandlerFunc: a.BlockVolumeInfo},
+		rest.Route{
+			Name:        "BlockVolumeDelete",
+			Method:      "DELETE",
+			Pattern:     "/blockvolumes/{id:[A-Fa-f0-9]+}",
+			HandlerFunc: a.BlockVolumeDelete},
+		rest.Route{
+			Name:        "BlockVolumeList",
+			Method:      "GET",
+			Pattern:     "/blockvolumes",
+			HandlerFunc: a.BlockVolumeList},
+
 		// Backup
 		rest.Route{
 			Name:        "Backup",
 			Method:      "GET",
 			Pattern:     "/backup/db",
 			HandlerFunc: a.Backup},
+
+		// Db
+		rest.Route{
+			Name:        "DbDump",
+			Method:      "GET",
+			Pattern:     "/db/dump",
+			HandlerFunc: a.DbDump},
 	}
 
 	// Register all routes from the App
@@ -430,4 +510,54 @@ func (a *App) Backup(w http.ResponseWriter, r *http.Request) {
 func (a *App) NotFoundHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Warning("Invalid path or request %v", r.URL.Path)
 	http.Error(w, "Invalid path or request", http.StatusNotFound)
+}
+
+// Allocator returns an allocator appropriate for the configuration
+// of this app. The allocator may be dynamically provided at
+// the time of the function call or cached from a prior call to
+// SetAllocator.
+func (a *App) Allocator() Allocator {
+	if a._allocator == nil {
+		return a.newAllocator()
+	}
+	return a._allocator
+}
+
+// SetAllocator manually sets the allocator for thie app.
+// The specified allocator will be cached on the app and
+// subsequent calls to Allocator will return the same object.
+// Generally this should only be used in test code.
+func (a *App) SetAllocator(allocator Allocator) {
+	if allocator == nil {
+		err := errors.New("use ClearAllocator to reset cached allocator")
+		panic(err)
+	}
+	a._allocator = allocator
+}
+
+// ClearAllocator resets the cached alloctor for this app.
+// This should be paired with calls to SetAllocator in order to
+// reset the app behavior to default when the test allocator is
+// no loger needed.
+func (a *App) ClearAllocator() {
+	a._allocator = nil
+}
+
+// newAllocator returns a newly created allocator based on the
+// configuration of the app.
+func (a *App) newAllocator() Allocator {
+	var alloc Allocator
+	switch {
+	case a.conf.Allocator == "simple" || a.conf.Allocator == "":
+		a.conf.Allocator = "simple"
+		if r := NewSimpleAllocatorFromDb(a.db); r != nil {
+			alloc = r
+		} else {
+			panic(errors.New("failed to set up simple allocator"))
+		}
+	default:
+		panic(errors.New("cannot load invalid allocator: " + a.conf.Allocator))
+	}
+	logger.Info("Loaded %v allocator", a.conf.Allocator)
+	return alloc
 }

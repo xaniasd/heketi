@@ -7,7 +7,7 @@
 // cases as published by the Free Software Foundation.
 //
 
-package sshexec
+package cmdexec
 
 import (
 	"strings"
@@ -19,25 +19,11 @@ import (
 )
 
 func TestSshExecBrickCreate(t *testing.T) {
-
-	f := NewFakeSsh()
-	defer tests.Patch(&sshNew,
-		func(logger *utils.Logger, user string, file string) (Ssher, error) {
-			return f, nil
-		}).Restore()
-
-	config := &SshConfig{
-		PrivateKeyFile: "xkeyfile",
-		User:           "xuser",
-		Port:           "100",
-		CLICommandConfig: CLICommandConfig{
-			Fstab: "/my/fstab",
-		},
-	}
-
-	s, err := NewSshExecutor(config)
+	f := NewCommandFaker()
+	s, err := NewFakeExecutor(f)
 	tests.Assert(t, err == nil)
 	tests.Assert(t, s != nil)
+	s.portStr = "100"
 
 	// Create a Brick
 	b := &executors.BrickRequest{
@@ -46,6 +32,7 @@ func TestSshExecBrickCreate(t *testing.T) {
 		TpSize:           100,
 		Size:             10,
 		PoolMetadataSize: 5,
+		Path:             utils.BrickPath("xvgid", "id"),
 	}
 
 	// Mock ssh function
@@ -104,25 +91,11 @@ func TestSshExecBrickCreate(t *testing.T) {
 }
 
 func TestSshExecBrickCreateWithGid(t *testing.T) {
-
-	f := NewFakeSsh()
-	defer tests.Patch(&sshNew,
-		func(logger *utils.Logger, user string, file string) (Ssher, error) {
-			return f, nil
-		}).Restore()
-
-	config := &SshConfig{
-		PrivateKeyFile: "xkeyfile",
-		User:           "xuser",
-		Port:           "100",
-		CLICommandConfig: CLICommandConfig{
-			Fstab: "/my/fstab",
-		},
-	}
-
-	s, err := NewSshExecutor(config)
+	f := NewCommandFaker()
+	s, err := NewFakeExecutor(f)
 	tests.Assert(t, err == nil)
 	tests.Assert(t, s != nil)
+	s.portStr = "100"
 
 	// Create a Brick
 	b := &executors.BrickRequest{
@@ -132,6 +105,7 @@ func TestSshExecBrickCreateWithGid(t *testing.T) {
 		Size:             10,
 		PoolMetadataSize: 5,
 		Gid:              1234,
+		Path:             utils.BrickPath("xvgid", "id"),
 	}
 
 	// Mock ssh function
@@ -200,26 +174,12 @@ func TestSshExecBrickCreateWithGid(t *testing.T) {
 }
 
 func TestSshExecBrickCreateSudo(t *testing.T) {
-
-	f := NewFakeSsh()
-	defer tests.Patch(&sshNew,
-		func(logger *utils.Logger, user string, file string) (Ssher, error) {
-			return f, nil
-		}).Restore()
-
-	config := &SshConfig{
-		PrivateKeyFile: "xkeyfile",
-		User:           "xuser",
-		Port:           "100",
-		CLICommandConfig: CLICommandConfig{
-			Fstab: "/my/fstab",
-			Sudo:  true,
-		},
-	}
-
-	s, err := NewSshExecutor(config)
+	f := NewCommandFaker()
+	s, err := NewFakeExecutor(f)
 	tests.Assert(t, err == nil)
 	tests.Assert(t, s != nil)
+	s.useSudo = true
+	s.portStr = "100"
 
 	// Create a Brick
 	b := &executors.BrickRequest{
@@ -228,6 +188,7 @@ func TestSshExecBrickCreateSudo(t *testing.T) {
 		TpSize:           100,
 		Size:             10,
 		PoolMetadataSize: 5,
+		Path:             utils.BrickPath("xvgid", "id"),
 	}
 
 	// Mock ssh function
@@ -287,25 +248,11 @@ func TestSshExecBrickCreateSudo(t *testing.T) {
 }
 
 func TestSshExecBrickDestroy(t *testing.T) {
-
-	f := NewFakeSsh()
-	defer tests.Patch(&sshNew,
-		func(logger *utils.Logger, user string, file string) (Ssher, error) {
-			return f, nil
-		}).Restore()
-
-	config := &SshConfig{
-		PrivateKeyFile: "xkeyfile",
-		User:           "xuser",
-		Port:           "100",
-		CLICommandConfig: CLICommandConfig{
-			Fstab: "/my/fstab",
-		},
-	}
-
-	s, err := NewSshExecutor(config)
+	f := NewCommandFaker()
+	s, err := NewFakeExecutor(f)
 	tests.Assert(t, err == nil)
 	tests.Assert(t, s != nil)
+	s.portStr = "100"
 
 	// Create a Brick
 	b := &executors.BrickRequest{
@@ -314,6 +261,7 @@ func TestSshExecBrickDestroy(t *testing.T) {
 		TpSize:           100,
 		Size:             10,
 		PoolMetadataSize: 5,
+		Path:             utils.BrickPath("xvgid", "id"),
 	}
 
 	// Mock ssh function
